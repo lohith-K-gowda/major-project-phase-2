@@ -1,0 +1,192 @@
+\chapter*{Appendices}
+\addcontentsline{toc}{chapter}{Appendices}
+
+\section*{Appendix A: PyTorch CCR-Diffusion Architecture and Multi-Scale FiLM Layer Pipeline}
+\addcontentsline{toc}{section}{Appendix A: PyTorch CCR-Diffusion Architecture and Multi-Scale FiLM Layer Pipeline}
+
+The following production Python module implements the core architectural components of the proposed Cross-Conditioned Residual Diffusion (CCR-Diffusion) network in PyTorch~\cite{paszke2019pytorch}, featuring Feature-wise Linear Modulation (FiLM) conditioned on multi-scale structural representations extracted from the Stage-1 deterministic prior:
+
+\begin{lstlisting}[language=Python, basicstyle=\ttfamily\scriptsize]
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+class FiLMBlock(nn.Module):
+    """
+    Feature-wise Linear Modulation (FiLM) Layer.
+    Dynamically scales and shifts intermediate denoiser activation maps 
+    using projections from structural condition features:
+    FiLM(F; gamma, beta) = (1.0 + gamma(c)) * F + beta(c)
+    """
+    def __init__(self, in_channels: int, cond_channels: int):
+        super().__init__()
+        self.conv_gamma = nn.Conv2d(cond_channels, in_channels, kernel_size=1, bias=True)
+        self.conv_beta  = nn.Conv2d(cond_channels, in_channels, kernel_size=1, bias=True)
+        
+        # Zero-initialization to ensure identity mapping at start of training
+        nn.init.zeros_(self.conv_gamma.weight)
+        nn.init.zeros_(self.conv_gamma.bias)
+        nn.init.zeros_(self.conv_beta.weight)
+        nn.init.zeros_(self.conv_beta.bias)
+
+    def forward(self, x: torch.Tensor, cond: torch.Tensor) -> torch.Tensor:
+        if cond.shape[2:] != x.shape[2:]:
+            cond = F.interpolate(cond, size=x.shape[2:], mode='bilinear', align_corners=False)
+        gamma = self.conv_gamma(cond)
+        beta  = self.conv_beta(cond)
+        return (1.0 + gamma) * x + beta
+
+class ResidualDiffusionBlock(nn.Module):
+    """
+    Residual ConvNeXt-style block integrated with FiLM modulation 
+    and sinusoidal diffusion timestep embedding injection.
+    """
+    def __init__(self, channels: int, cond_channels: int, time_dim: int):
+        super().__init__()
+        self.norm1 = nn.GroupNorm(num_groups=8, num_channels=channels)
+        self.act1  = nn.SiLU()
+        self.conv1 = nn.Conv2d(channels, channels, kernel_size=3, padding=1)
+        
+        self.film  = FiLMBlock(channels, cond_channels)
+        self.time_proj = nn.Linear(time_dim, channels)
+        
+        self.norm2 = nn.GroupNorm(num_groups=8, num_channels=channels)
+        self.act2  = nn.SiLU()
+        self.conv2 = nn.Conv2d(channels, channels, kernel_size=3, padding=1)
+        
+    def forward(self, x: torch.Tensor, cond: torch.Tensor, t_emb: torch.Tensor) -> torch.Tensor:
+        residual = x
+        h = self.conv1(self.act1(self.norm1(x)))
+        h = self.film(h, cond)
+        
+        # Add sinusoidal timestep embedding
+        t_proj = self.time_proj(t_emb)[:, :, None, None]
+        h = h + t_proj
+        
+        h = self.conv2(self.act2(self.norm2(h)))
+        return residual + h
+\end{lstlisting}
+
+\vspace{12pt}
+\section*{Appendix B: Accelerated 50-Step Deterministic DDIM Sampling and Physical HU Re-Calibration Engine}
+\addcontentsline{toc}{section}{Appendix B: Accelerated 50-Step Deterministic DDIM Sampling and Physical HU Re-Calibration Engine}
+
+The following executable Python script implements the accelerated non-Markovian Denoising Diffusion Implicit Models (DDIM) reverse trajectory across a 50-step uniform sub-sequence ($\sigma_t = 0$), followed by physical radiometric re-calibration to convert normalized tensors into clinically calibrated Hounsfield Units:
+
+\begin{lstlisting}[language=Python, basicstyle=\ttfamily\scriptsize]
+import torch
+import numpy as np
+
+@torch.no_grad()
+def ddim_sample_50_steps(
+    model: torch.nn.Module,
+    stage1_anchor: torch.Tensor,
+    mri_condition: torch.Tensor,
+    cranial_mask: torch.Tensor,
+    alphas_cumprod: torch.Tensor,
+    num_ddim_steps: int = 50,
+    device: str = "cuda"
+) -> torch.Tensor:
+    """
+    Executes deterministic reverse sampling along a 50-step sub-sequence tau in [1, 1000].
+    Returns the physical sCT prediction in Hounsfield Units (HU).
+    """
+    model.eval()
+    B, C, H, W = stage1_anchor.shape
+    
+    # 1. Uniformly subsample reverse trajectory steps
+    step_ratio = 1000 // num_ddim_steps
+    tau_seq = np.arange(0, 1000, step_ratio)
+    
+    # 2. Initialize latent residual from standard Gaussian noise
+    z_t = torch.randn((B, 1, H, W), device=device)
+    
+    # 3. Deterministic DDIM reverse sampling loop
+    for i in reversed(range(len(tau_seq))):
+        t_val = tau_seq[i]
+        t_tensor = torch.full((B,), t_val, device=device, dtype=torch.long)
+        
+        # Model predicts noise residual conditioned on Stage-1 anchor and MRI
+        eps_pred = model(z_t, t_tensor, stage1_anchor, mri_condition)
+        
+        alpha_t = alphas_cumprod[t_val]
+        alpha_prev = alphas_cumprod[tau_seq[i - 1]] if i > 0 else torch.tensor(1.0, device=device)
+        
+        # Predict denoised residual z_0
+        pred_z0 = (z_t - torch.sqrt(1.0 - alpha_t) * eps_pred) / torch.sqrt(alpha_t)
+        
+        # Deterministic reverse trajectory step (sigma_t = 0.0)
+        z_t = torch.sqrt(alpha_prev) * pred_z0 + torch.sqrt(1.0 - alpha_prev) * eps_pred
+
+    # 4. Synthesize final normalized synthetic CT
+    pred_sct_norm = stage1_anchor + z_t
+    pred_sct_norm = torch.clamp(pred_sct_norm, -1.0, 1.0)
+    
+    # 5. Physical Radiometric Calibration (TPS Export Protocol)
+    # y_HU = ((y_norm + 1.0) / 2.0) * 2500.0 - 1000.0
+    pred_sct_hu = ((pred_sct_norm + 1.0) / 2.0) * 2500.0 - 1000.0
+    
+    # Enforce physical background air clamp outside intracranial mask
+    pred_sct_hu = torch.where(cranial_mask > 0.5, pred_sct_hu, torch.tensor(-1000.0, device=device))
+    return pred_sct_hu
+\end{lstlisting}
+
+\vspace{12pt}
+\section*{Appendix C: Automated Clinical Radiotherapy QA and Multi-Metric Benchmarking Suite}
+\addcontentsline{toc}{section}{Appendix C: Automated Clinical Radiotherapy QA and Multi-Metric Benchmarking Suite}
+
+The following Python benchmarking script calculates clinical radiation therapy quality assurance (QA) metrics across held-out test patient cohorts, computing patient-wise Masked and Global SSIM, Global and Masked PSNR, normalized MAE, calibrated HU-MAE, Root-Mean-Square Error (RMSE), and Cortical Bone Dice coefficient ($\text{HU} \ge +300$):
+
+\begin{lstlisting}[language=Python, basicstyle=\ttfamily\scriptsize]
+import numpy as np
+from skimage.metrics import structural_similarity as ssim_fn
+from skimage.metrics import peak_signal_noise_ratio as psnr_fn
+
+def compute_radiotherapy_qa_metrics(
+    pred_hu: np.ndarray, 
+    true_hu: np.ndarray, 
+    cranial_mask: np.ndarray
+) -> dict:
+    """
+    Computes rigorous clinical Radiotherapy QA and geometric metrics 
+    between predicted sCT and reference ground-truth CT.
+    """
+    mask_bool = cranial_mask.astype(bool)
+    
+    # 1. Global Field-of-View Evaluation (SSIM, PSNR)
+    data_range = float(true_hu.max() - true_hu.min())
+    global_ssim = ssim_fn(true_hu, pred_hu, data_range=data_range)
+    global_psnr = psnr_fn(true_hu, pred_hu, data_range=data_range)
+    
+    # 2. Intracranial Masked Evaluation (eliminating external air inflation)
+    pred_masked = np.where(mask_bool, pred_hu, -1000.0)
+    true_masked = np.where(mask_bool, true_hu, -1000.0)
+    masked_ssim = ssim_fn(true_masked, pred_masked, data_range=data_range)
+    masked_psnr = psnr_fn(true_masked, pred_masked, data_range=data_range)
+    
+    # 3. Radiometric Absolute Error (HU-MAE and normalized MAE)
+    voxel_diff = np.abs(pred_hu[mask_bool] - true_hu[mask_bool])
+    hu_mae = float(np.mean(voxel_diff))
+    norm_mae = float(hu_mae / 2500.0)
+    
+    # 4. Outlier Error Suppression (RMSE)
+    rmse = float(np.sqrt(np.mean((pred_hu[mask_bool] - true_hu[mask_bool]) ** 2)) / 2500.0)
+    
+    # 5. Cortical Bone Delineation Fidelity (HU >= +300)
+    pred_bone = (pred_hu >= 300.0) & mask_bool
+    true_bone = (true_hu >= 300.0) & mask_bool
+    intersection = np.logical_and(pred_bone, true_bone).sum()
+    total_voxels = pred_bone.sum() + true_bone.sum()
+    bone_dice = float((2.0 * intersection) / (total_voxels + 1e-8))
+    
+    return {
+        "Global_SSIM": global_ssim,
+        "Masked_SSIM": masked_ssim,
+        "Global_PSNR_dB": global_psnr,
+        "Masked_PSNR_dB": masked_psnr,
+        "Normalized_MAE": norm_mae,
+        "Physical_HU_MAE": hu_mae,
+        "RMSE": rmse,
+        "Bone_Dice_300HU": bone_dice
+    }
+\end{lstlisting}

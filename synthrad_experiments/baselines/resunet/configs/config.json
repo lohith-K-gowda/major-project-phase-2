@@ -1,0 +1,88 @@
+{
+  "project_name": "SynthRAD2023 Brain MRI to CT Synthesis",
+  "experiment_name": "ResUNet Supervised Baseline",
+  "task": "Brain MRI -> Synthetic CT (Paired Supervised Baseline)",
+  "dataset": {
+    "source": "SynthRAD2023 Task 1 Brain (UMC Utrecht cohort, 60 patients)",
+    "kaggle_path": "/kaggle/input/datasets/lohithkgowda/synthrad2023-brain-2d-png/synthrad_png",
+    "raw_nifti_archive": "Task1_brain.zip",
+    "image_format": "2D Grayscale PNG (8-bit)",
+    "image_dimensions": [128, 128],
+    "input_channels": 1,
+    "output_channels": 1,
+    "normalization": {
+      "input_domain": "[-1.0, 1.0]",
+      "target_domain": "[-1.0, 1.0]",
+      "hu_min": -1000.0,
+      "hu_max": 1500.0,
+      "hu_range": 2500.0,
+      "bone_threshold_hu": 300.0
+    },
+    "body_mask": {
+      "source": "Strictly MRI-derived (Otsu-like threshold > 15 + 7x7 ellipse morphological closing + largest contour fill)",
+      "ct_mask_leakage": false,
+      "background_fill": -1.0
+    }
+  },
+  "patient_splits": {
+    "split_seed": 42,
+    "isolation_policy": "Strict Patient-Level Isolation (Zero Slices Leakage)",
+    "train_patients_count": 48,
+    "val_patients_count": 6,
+    "test_patients_count": 6,
+    "train_slices": 2879,
+    "val_slices": 372,
+    "test_slices": 363,
+    "total_slices": 3614,
+    "train_patients": [
+      "1BA001", "1BA005", "1BA012", "1BA014", "1BA022", "1BA032", "1BA040", "1BA058",
+      "1BA075", "1BA082", "1BA085", "1BA091", "1BA100", "1BA103", "1BA105", "1BA116",
+      "1BA131", "1BA143", "1BA151", "1BA158", "1BA159", "1BA164", "1BA175", "1BA184",
+      "1BA185", "1BA189", "1BA201", "1BA206", "1BA220", "1BA222", "1BA227", "1BA239",
+      "1BA247", "1BA253", "1BA260", "1BA266", "1BA278", "1BA288", "1BA292", "1BA294",
+      "1BA305", "1BA325", "1BA328", "1BA336", "1BA345", "1BA358", "1BA359", "1BA368"
+    ],
+    "val_patients": ["1BA076", "1BA111", "1BA125", "1BA141", "1BA300", "1BA379"],
+    "test_patients": ["1BA054", "1BA097", "1BA172", "1BA234", "1BA256", "1BA307"]
+  },
+  "model_architecture": {
+    "model_type": "Supervised Residual U-Net (ResUNet)",
+    "in_channels": 1,
+    "out_channels": 1,
+    "encoder_filters": [64, 128, 256, 512],
+    "bottleneck_filters": 512,
+    "decoder_filters": [256, 128, 64, 64],
+    "normalization": "GroupNorm (8 groups)",
+    "activation": "LeakyReLU (0.2)",
+    "final_activation": "Tanh (maps to [-1.0, 1.0])",
+    "total_parameters": 18483009,
+    "diffusion_components_included": false,
+    "attention_gates_included": false,
+    "gan_discriminator_included": false
+  },
+  "training_hyperparameters": {
+    "optimizer": "AdamW",
+    "learning_rate": 0.0001,
+    "weight_decay": 0.0001,
+    "scheduler": "CosineAnnealingLR (eta_min=1e-6)",
+    "batch_size": 8,
+    "epochs": 80,
+    "loss_function": "Masked L1 + 0.1 * Masked SSIM",
+    "lambda_ssim": 0.10,
+    "gradient_clipping_max_norm": 1.0,
+    "random_seed": 42
+  },
+  "benchmark_comparison_context": {
+    "proposed_model": "Conditional DDPM (CDDPM)",
+    "historical_cddpm_checkpoint": "best_cddpm_synthrad_sota.pth (Epoch 73)",
+    "historical_cddpm_test_ssim": "0.8963 ± 0.0319",
+    "historical_cddpm_test_psnr": "24.35 ± 2.38 dB",
+    "historical_cddpm_test_hu_mae": "57.4 ± 18.8 HU",
+    "historical_cddpm_test_bone_dice": "0.7732 ± 0.0696",
+    "planned_tripartite_comparison": [
+      "1. ResUNet (Supervised Baseline - Current Task)",
+      "2. Pix2Pix (Paired GAN Baseline - Future Task)",
+      "3. CDDPM Epoch 73 (Proposed Diffusion Model - Frozen Historical)"
+    ]
+  }
+}

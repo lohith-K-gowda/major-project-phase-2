@@ -1,0 +1,138 @@
+\chapter{Introduction}
+
+\section{Project Background}
+Modern external beam radiotherapy (EBRT) relies fundamentally on accurate patient anatomical representations to deliver lethal ionizing radiation doses to target neoplastic lesions while strictly sparing adjacent critical organs-at-risk (OARs)~\cite{thummerer2023synthrad2023,edmund2017review}. In contemporary clinical oncology, Computed Tomography (CT) serves as the indispensable cornerstone for treatment simulation, anatomical contouring, and radiation dose calculation~\cite{edmund2017review}. The diagnostic values in CT images are natively calibrated in Hounsfield Units (HU), which maintain a direct, monotonic mathematical relationship with physical tissue electron densities ($\rho_e$) and photon linear attenuation coefficients ($\mu$)~\cite{edmund2017review,korsholm2018clinical}:
+\begin{equation}
+\text{HU} = 1000 \times \left( \frac{\mu_{\text{tissue}} - \mu_{\text{water}}}{\mu_{\text{water}}} \right)
+\label{eq:hu_definition}
+\end{equation}
+Because high-energy photon and proton beams interact with human tissue predominantly through Compton scattering and secondary ionization processes, commercial Radiation Treatment Planning Systems (TPS) mandate CT-derived electron density calibration curves to execute Monte Carlo or collapsed-cone convolution dose calculations~\cite{edmund2017review,siversson2015mri}. 
+
+Concurrently, Magnetic Resonance Imaging (MRI) has emerged as an indispensable supplementary diagnostic modality in neuro-oncology~\cite{siversson2015mri,korsholm2018clinical}. By interrogating the nuclear magnetic resonance properties of hydrogen protons under static and radiofrequency magnetic fields, MRI generates exceptional soft-tissue contrast and superior spatial demarcation of intracranial neoplasms, cerebrospinal fluid (CSF) interfaces, and cranial nerve structures that remain indistinct or radiologically isodense on non-contrast CT~\cite{siversson2015mri,thummerer2023synthrad2023}. 
+
+However, MRI signal intensity reflects nuclear spin-lattice ($T_1$) and spin-spin ($T_2, T_2^*$) relaxation dynamics, proton density, and local magnetic susceptibility gradients rather than physical electron density~\cite{edmund2017review}. Consequently, standard MRI scans lack electron density information and cannot be ingested directly by TPS algorithms for dose deposition modeling~\cite{edmund2017review,thummerer2023synthrad2023}.
+
+\section{Clinical Need for Synthetic CT (sCT)}
+Because neither imaging modality alone satisfies both soft-tissue delineation and dose calculation prerequisites, current standard-of-care clinical radiotherapy enforces a dual-modality workflow~\cite{edmund2017review,siversson2015mri}. In this paradigm, patients must undergo both an initial simulation CT scan (for electron density assignment) and a subsequent high-resolution diagnostic MRI scan (for target volume delineation). Medical physicists then execute multimodal image coregistration to warp the MR-delineated contours onto the reference planning CT geometry~\cite{edmund2017review}.
+
+Despite its widespread clinical adoption, this dual-modality acquisition paradigm suffers from three critical vulnerabilities~\cite{edmund2017review,korsholm2018clinical,siversson2015mri}:
+\begin{enumerate}[label=\textbf{(\arabic*)}]
+    \item \textbf{Systematic Coregistration Errors:} Inter-modality image registration between separate CT and MRI scanners inevitably incurs spatial alignment uncertainties ranging from $1.5\text{ mm}$ to over $5.0\text{ mm}$, even when rigid cranial immobilizers are employed~\cite{edmund2017review,korsholm2018clinical}. Anatomical variations—such as patient positioning discrepancies, physiological head flexion, soft-tissue deformation, and non-linear MRI magnetic gradient coil distortions—introduce systematic positioning offsets~\cite{edmund2017review}. In precision stereotactic radiosurgery (SRS) and intensity-modulated proton therapy (IMPT), where treatment margins often do not exceed $1\text{ to }2\text{ mm}$, registration misalignments can cause critical geometric misses of gross tumor volumes or unacceptable radiation overdose to the brainstem and optic chiasm~\cite{siversson2015mri}.
+    \item \textbf{Cumulative Ionizing Radiation Exposure:} Diagnostic and planning CT scans expose cancer patients to non-negligible ionizing radiation doses (typically $2\text{ to }4\text{ mSv}$ per cranial CT examination)~\cite{edmund2017review}. For pediatric neuro-oncology patients and individuals undergoing repeated adaptive radiotherapy fractions over multi-week protocols, this cumulative secondary radiation significantly elevates long-term risks of radiation-induced secondary malignancies~\cite{edmund2017review,thummerer2023synthrad2023}.
+    \item \textbf{Elevated Healthcare Costs and Clinical Overhead:} The necessity of scheduling, acquiring, reconstructing, and quality-assuring two independent scanning sessions substantially inflates healthcare expenditures, strains hospital infrastructure, and prolongs the crucial time interval between initial cancer diagnosis and radiation treatment delivery~\cite{edmund2017review,siversson2015mri}.
+\end{enumerate}
+
+To eliminate these clinical drawbacks, the international radiation oncology community is actively transitioning toward an \textbf{``MRI-Only Radiotherapy Planning Workflow''}~\cite{edmund2017review,thummerer2023synthrad2023}. In an MRI-only pipeline, the planning CT scan is omitted entirely; instead, a highly accurate \emph{Synthetic CT} (sCT)—also known as a pseudo-CT—is computationally synthesized directly from the planning MRI volume. This sCT preserves the pristine soft-tissue coordinate system of the MR scan while substituting geometrically aligned, quantitatively accurate Hounsfield Units for accurate dosimetric planning~\cite{thummerer2023synthrad2023}.
+
+\section{Technical Challenges in MRI-to-CT Translation}
+Synthesizing realistic, radiologically valid CT volumes from raw MRI sequences presents severe computational and physical inverse-problem challenges~\cite{edmund2017review,kazerouni2023diffusion,lyu2022conversion}:
+\begin{itemize}
+    \item \textbf{Severe Signal Ambiguity of Cortical Bone:} The most prominent challenge in MRI-to-CT translation is the acute signal ambiguity between cortical bone and air cavities~\cite{edmund2017review,thummerer2023synthrad2023}. Cortical bone possesses an extremely short apparent transverse relaxation time ($T_2^* < 0.5\text{ ms}$) and a low mobile proton density; as a result, free induction decay occurs faster than standard MRI echo times ($T_E$), causing bone to manifest as void, zero-signal hypointense regions in standard $T_1$-weighted gradient-echo or spin-echo sequences~\cite{edmund2017review}. Similarly, air cavities (such as the sphenoid and ethmoid paranasal sinuses, mastoid air cells, and the ambient scanner bore) contain negligible proton density and appear completely dark~\cite{edmund2017review,korsholm2018clinical}. 
+    
+    However, on CT, cortical bone and air represent the two opposing extremes of the attenuation spectrum: air measures approximately $-1000\text{ HU}$, whereas dense skull bone exceeds $+1000\text{ to }+2500\text{ HU}$~\cite{thummerer2023synthrad2023}. Differentiating these identically dark MRI regions demands deep spatial contextual reasoning and structural geometric priors.
+    \item \textbf{Ill-Posed, Non-Unique Cross-Modality Mapping:} MRI voxel intensities are arbitrary scanner-dependent quantities governed by local coil sensitivities, radiofrequency transmit/receive inhomogeneities ($B_1^+$ and $B_1^-$ fields), receiver gain, and vendor-specific reconstruction filters~\cite{thummerer2023synthrad2023}. Consequently, MRI voxel values lack absolute physical units, rendering the translation $f: \text{MRI} \to \text{CT}$ an intrinsically non-injective, ill-posed inverse problem~\cite{lyu2022conversion,kazerouni2023diffusion}.
+    \item \textbf{Geometric and Susceptibility Distortions:} Static magnetic field ($B_0$) inhomogeneities at air-tissue interfaces cause localized voxel displacement and distortion artifacts in MRI, which contrast sharply with the rigid, geometrically faithful reconstruction geometry of CT~\cite{edmund2017review}.
+\end{itemize}
+
+\section{Problem Statement and Mathematical Formulations}
+Given an input planning magnetic resonance image slice $\mathbf{x} \in \mathbb{R}^{H \times W}$ within a spatial domain $\Omega \subset \mathbb{R}^2$, the objective of MRI-to-CT image translation is to learn a parameterized functional mapping $f_\theta: \mathbf{x} \to \mathbf{\hat{y}}$ that accurately estimates the true, co-registered computed tomography slice $\mathbf{y} \in \mathbb{R}^{H \times W}$ across all anatomical structures. In accordance with clinical benchmarks established by the international SynthRAD2023 challenge~\cite{thummerer2023synthrad2023}, both MRI and CT volumes are scaled to a unified, normalized physical dynamic range $[-1.0, +1.0]$, corresponding to the standard clinical CT window $[-1000\text{ HU}, +3000\text{ HU}]$ via the linear transformation:
+\begin{equation}
+y_{\text{norm}} = 2 \times \left( \frac{y_{\text{HU}} - \text{HU}_{\min}}{\text{HU}_{\max} - \text{HU}_{\min}} \right) - 1.0, \quad \text{where } \text{HU}_{\min} = -1000, \; \text{HU}_{\max} = 3000
+\label{eq:hu_normalization}
+\end{equation}
+
+To thoroughly investigate generative deep learning paradigms, this project formulates, implements, and benchmarks five distinct model architectures under strictly identical training, validation, and testing splits (Seed 42, $80\%/20\%$ patient-level cohort split):
+
+\subsection{Model 1: Deep Residual U-Net (ResUNet Baseline)}
+The first model implements a supervised, fully convolutional baseline utilizing deep residual blocks to mitigate vanishing gradients and facilitate multi-scale feature propagation~\cite{zhang2018road,ronneberger2015u}. The network parameters $\theta_{\text{ResUNet}}$ are optimized using a composite objective balancing voxel-wise fidelity ($L_1$) and global reconstruction energy (Mean Squared Error, MSE):
+\begin{equation}
+\mathcal{L}_{\text{ResUNet}}(\theta) = \frac{1}{|\Omega|} \sum_{i \in \Omega} |\hat{y}_i - y_i| + \frac{\lambda_{\text{mse}}}{|\Omega|} \sum_{i \in \Omega} (\hat{y}_i - y_i)^2
+\label{eq:m1_loss}
+\end{equation}
+While computationally efficient and deterministic, pure regression models notoriously suffer from regression-to-the-mean effects, leading to oversmoothed bone-tissue boundaries and structural attenuation underestimations.
+
+\subsection{Model 2: Conditional Generative Adversarial Network (Pix2Pix cGAN)}
+To overcome blurriness and encourage realistic high-frequency anatomical texture, Model 2 implements a conditional adversarial framework~\cite{isola2017image,nie2017medical}. The generator $G$ and a Markovian PatchGAN discriminator $D$ engage in a two-player minimax game conditioned on the MRI image $\mathbf{x}$:
+\begin{equation}
+\min_G \max_D \mathcal{L}_{\text{cGAN}}(G, D) + \lambda_{\text{rec}} \mathcal{L}_{L_1}(G)
+\label{eq:m2_cgan}
+\end{equation}
+where the conditional adversarial objective is defined as:
+\begin{equation}
+\mathcal{L}_{\text{cGAN}}(G, D) = \mathbb{E}_{\mathbf{x}, \mathbf{y}} \left[ \log D(\mathbf{x}, \mathbf{y}) \right] + \mathbb{E}_{\mathbf{x}} \left[ \log \left( 1 - D(\mathbf{x}, G(\mathbf{x})) \right) \right]
+\label{eq:m2_adv_loss}
+\end{equation}
+and $\mathcal{L}_{L_1}(G) = \mathbb{E}_{\mathbf{x}, \mathbf{y}} \left[ \|\mathbf{y} - G(\mathbf{x})\|_1 \right]$. Although Pix2Pix produces visually sharper bone structures, adversarial training is susceptible to mode collapse, hallucinated pseudo-anatomical structures, and subtle geometric distortions unacceptable for radiation dosimetry.
+
+\subsection{Model 3: Conditional Denoising Diffusion Probabilistic Model (cDDPM From Scratch)}
+Model 3 explores likelihood-based generative diffusion modeling~\cite{ho2020denoising,saharia2022palette}. Unlike GANs, diffusion models define a rigorous forward Gaussian corruption process $q(\mathbf{y}_t | \mathbf{y}_{t-1})$ parameterized by a predetermined variance schedule $\{\beta_t \in (0, 1)\}_{t=1}^T$:
+\begin{equation}
+q(\mathbf{y}_t | \mathbf{y}_0) = \mathcal{N}\left(\mathbf{y}_t; \; \sqrt{\bar{\alpha}_t} \mathbf{y}_0, \; (1 - \bar{\alpha}_t) \mathbf{I}\right), \quad \alpha_t = 1 - \beta_t, \quad \bar{\alpha}_t = \prod_{s=1}^t \alpha_s
+\label{eq:m3_forward_diff}
+\end{equation}
+The neural denoiser $\boldsymbol{\epsilon}_\theta(\mathbf{y}_t, t, \mathbf{x}, \mathbf{m})$ receives a 3-channel input tensor concatenating the noisy intermediate CT $\mathbf{y}_t$, conditioning MRI $\mathbf{x}$, and brain mask $\mathbf{m}$ to predict the injected Gaussian noise $\boldsymbol{\epsilon} \sim \mathcal{N}(\mathbf{0}, \mathbf{I})$:
+\begin{equation}
+\mathcal{L}_{\text{cDDPM}}(\theta) = \mathbb{E}_{t, \mathbf{y}_0, \boldsymbol{\epsilon}, \mathbf{x}, \mathbf{m}} \left[ \left\| \boldsymbol{\epsilon} - \boldsymbol{\epsilon}_\theta\left( \sqrt{\bar{\alpha}_t}\mathbf{y}_0 + \sqrt{1 - \bar{\alpha}_t}\boldsymbol{\epsilon}, \; t, \; \mathbf{x}, \; \mathbf{m} \right) \right\|_2^2 \right]
+\label{eq:m3_cddpm_loss}
+\end{equation}
+Inference is accelerated using Denoising Diffusion Implicit Models (DDIM, $\eta = 0$) across 50 deterministic reverse steps~\cite{song2021denoising}.
+
+\subsection{Model 4: SOTA Conditional DDPM with Residual Attention (SOTA-CDDPM)}
+Model 4 extends diffusion modeling by incorporating cross-layer Attention Gates and an anatomical multi-component hybrid loss formulation~\cite{kazerouni2023diffusion,lyu2022conversion}. Attention gates dynamically suppress irrelevant background scanner noise and highlight steep cranial gradient interfaces:
+\begin{equation}
+\mathbf{\alpha} = \sigma\left( \psi^T \left[ \text{ReLU}\left( W_g \mathbf{g} + W_x \mathbf{x} \right) \right] \right)
+\label{eq:m4_attention}
+\end{equation}
+The training objective couples standard noise prediction with bone-weighted absolute error and structural edge preservation:
+\begin{equation}
+\mathcal{L}_{\text{SOTA}} = \mathcal{L}_{\text{diff}}(\boldsymbol{\epsilon}, \hat{\boldsymbol{\epsilon}}) + \lambda_{\text{bone}} \mathbb{E}\left[ \mathbf{w}_{\text{bone}} \odot |\hat{\mathbf{y}}_0 - \mathbf{y}_0| \right] + \lambda_{\text{ssim}} \mathcal{L}_{\text{SSIM}}(\hat{\mathbf{y}}_0, \mathbf{y}_0)
+\label{eq:m4_hybrid_loss}
+\end{equation}
+where $\mathbf{w}_{\text{bone}} = 1.0 + 4.0 \cdot \mathbb{I}(y_{\text{real}} > 300\text{ HU})$ quadruples the penalty on erroneous skull predictions.
+
+\subsection{Model 5: Proposed Cross-Conditioned Residual Diffusion (CCR-Diffusion)}
+To overcome the high sampling latency and residual noise artifacts of standard diffusion models, Model 5 establishes a novel two-stage decoupled paradigm:
+\begin{enumerate}
+    \item \textbf{Stage 1 (Coarse Anatomical Anchor):} A 4-stage residual network generates a deterministic structural coarse CT $\mathbf{c} = f_{\text{stage1}}(\mathbf{x}) \in [-1.0, 1.0]$. Multi-scale feature tensors $\mathbf{F}_{\text{enc}}^{(l)} \in \mathbb{R}^{C_l \times H_l \times W_l}$ are extracted across all encoder depths ($l \in \{1, 2, 3, 4\}$).
+    \item \textbf{Stage 2 (FiLM-Modulated Residual Diffusion):} The diffusion model operates exclusively on normalized high-frequency residual vectors $\mathbf{z}_0 = (\mathbf{y} - \mathbf{c}) / s$, where $s = \sigma(\mathbf{y} - \mathbf{c})$ is the empirical residual scale. Decoder feature representations are dynamically modulated via Feature-wise Linear Modulation (FiLM)~\cite{perez2018film}:
+    \begin{equation}
+    \text{FiLM}(\mathbf{F}; \boldsymbol{\gamma}, \boldsymbol{\beta}) = (1.0 + \boldsymbol{\gamma}) \odot \mathbf{F} + \boldsymbol{\beta}
+    \label{eq:m5_film}
+    \end{equation}
+    where $\boldsymbol{\gamma}, \boldsymbol{\beta} = \text{Conv}_{1 \times 1}(\mathbf{F}_{\text{enc}}^{(l)})$. Reconstructed synthetic CT is obtained deterministically via:
+    \begin{equation}
+    \mathbf{\hat{y}} = \text{clip}\left( \mathbf{c} + s \cdot \mathbf{z}_0, \; -1.0, \; 1.0 \right)
+    \label{eq:m5_recon}
+    \end{equation}
+\end{enumerate}
+
+\section{Project Objectives}
+The central goal of this project is to develop, benchmark, and clinically validate an end-to-end deep learning framework for MRI-to-CT translation capable of enabling MRI-only radiotherapy planning. The specific measurable objectives are:
+\begin{enumerate}[label=\textbf{\arabic*.}]
+    \item \textbf{Standardized Preprocessing and Cohort Stratification:} Construct a robust, reproducible data processing pipeline adhering to the SynthRAD2023 challenge protocol, incorporating robust intensity normalization ($[-1000\text{ HU}, +3000\text{ HU}] \to [-1.0, +1.0]$), cranial mask isolation, and rigorous patient-level $80\%/20\%$ split isolation (Seed 42) to prevent data leakage.
+    \item \textbf{Rigorous 5-Model Comparative Implementation:} Implement, train to convergence, and evaluate five diverse architectural families spanning deep convolutional regression (ResUNet), generative adversarial networks (Pix2Pix cGAN), unconstrained conditional diffusion (cDDPM), attention-guided diffusion (SOTA-CDDPM), and the proposed two-stage Cross-Conditioned Residual Diffusion (CCR-Diffusion).
+    \item \textbf{Multi-Faceted Clinical Metric Benchmarking:} Evaluate synthesized CT slices across four primary quantitative metrics: Mean Absolute Error across all intracranial tissues ($\text{MAE}_{\text{all}}$), Bone-specific reconstruction error ($\text{MAE}_{\text{bone}}$, $\text{HU} > 300$), Structural Similarity Index Measure (SSIM), and Peak Signal-to-Noise Ratio (PSNR), aggregated across both slice-level and patient-level distributions.
+    \item \textbf{Computational and Hardware Profiling:} Measure real-world clinical feasibility by profiling each model's total parameter footprint, trainable parameters, single-slice inference latency (milliseconds per slice), frames per second (FPS), and peak GPU VRAM utilization under deterministic DDIM sampling (50 steps).
+    \item \textbf{Ablation and Radiotherapy Dosimetric Validation:} Validate the superiority of two-stage residual diffusion over standard GAN and DDPM models, demonstrating significant reductions in cortical bone error ($\text{MAE}_{\text{bone}}$) and eliminating hallucinated anatomical artifacts.
+\end{enumerate}
+
+\section{Scope and Boundaries}
+The scope of this major project encompasses:
+\begin{itemize}
+    \item \textbf{Anatomical Site:} Brain cancer radiotherapy imaging from the SynthRAD2023 Grand Challenge dataset (comprising 363 paired 2D axial test slices across diverse patient demographics).
+    \item \textbf{Input Modality:} Paired $T_1$-weighted axial Magnetic Resonance Imaging (MRI) rigidly registered to planning CT volumes.
+    \item \textbf{Output Modality:} Quantitative Synthetic Computed Tomography (sCT) calibrated in absolute Hounsfield Units within the $[-1000\text{ HU}, +3000\text{ HU}]$ window.
+    \item \textbf{Hardware Scope:} Model training and GPU accelerated inference benchmarking conducted on NVIDIA GPU infrastructure using PyTorch and CUDA runtime environments.
+\end{itemize}
+
+\noindent \textbf{Project Boundaries:} The project specifically focuses on 2D axial slice-wise generation. Inter-fraction anatomical changes occurring during multi-week radiotherapy (e.g., tumor shrinkage or weight loss) and non-rigid deformable organ motion outside the intracranial cavity (such as thoracic or abdominal respiratory motion) lie beyond the immediate scope of this study.
+
+\section{Organization of the Report}
+The remainder of this major project report is structured into five subsequent chapters:
+\begin{itemize}
+    \item \textbf{Chapter 2 (Literature Survey):} Presents an exhaustive review of related work, tracing the historical evolution of synthetic CT generation from atlas-based and bulk-density assignment methods to modern Convolutional Neural Networks, Generative Adversarial Networks, and Denoising Diffusion Probabilistic Models. A comprehensive comparison table highlights gaps in existing literature.
+    \item \textbf{Chapter 3 (System Requirements and Methodology):} Formulates the end-to-end system architecture, mathematical principles of the five generative pipelines, dataset specifications, preprocessing pipelines, and Data Flow Diagrams (DFDs).
+    \item \textbf{Chapter 4 (Implementation Details):} Details the software engineering stack, modular codebase structure, hyperparameter configurations, loss function implementations, and DDIM reverse sampling algorithms.
+    \item \textbf{Chapter 5 (Results, Quantitative Evaluation, and Discussion):} Provides exhaustive empirical results, including comparative metric tables ($\text{MAE}_{\text{all}}$, $\text{MAE}_{\text{bone}}$, SSIM, PSNR), hardware latency and VRAM profiling, qualitative visual comparison grids, error difference maps, and clinical dosimetric impact analyses.
+    \item \textbf{Chapter 6 (Conclusion and Future Scope):} Summarizes the major research findings, outlines clinical translation feasibility, acknowledges project limitations, and outlines future avenues for 3D volumetric extension and adaptive proton therapy integration.
+\end{itemize}

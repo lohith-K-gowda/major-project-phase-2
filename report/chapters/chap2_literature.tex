@@ -1,0 +1,381 @@
+\chapter{Literature Survey}
+
+\section{Introduction to the Domain Literature}
+The quest to achieve an accurate, robust, and clinically deployable MRI-only radiotherapy workflow has inspired intensive multidisciplinary research spanning medical physics, clinical oncology, computer vision, and deep generative learning over the past two decades~\cite{edmund2017review}. The central objective of MRI-to-CT translation is to infer quantitatively reliable Hounsfield Units (HU) and spatial electron density distributions ($\rho_e$) directly from non-ionizing magnetic resonance acquisitions, thereby resolving the dual-modality registration dilemmas inherent to modern treatment planning~\cite{edmund2017review,thummerer2023synthrad2023}. 
+
+Methodologies developed in the literature can be broadly categorized into five successive evolutionary generations:
+\begin{enumerate}[label=\textbf{(\arabic*)}]
+    \item \textbf{Classical Heuristic Methods (Pre-Deep Learning):} Including bulk-density assignment through multi-tissue thresholding, fuzzy classification, and single/multi-atlas deformable image registration~\cite{kapanen2013t1,sjolund2015comprehensive,gudur2014mri,korhonen2014evaluation,burgos2014multi,dowling2015automatic}.
+    \item \textbf{Deep Convolutional Regression Architectures:} Employing supervised voxel-wise loss formulations ($L_1$, $L_2$, Huber) over fully convolutional architectures, such as standard U-Nets, 3D CNNs, and Residual U-Nets~\cite{han2017mr,ronneberger2015u,nie2016fully,zhang2018road,jin2019deep,dinkla2018mr,fu2019fast,arabi2018novel}.
+    \item \textbf{Generative Adversarial Networks (GANs):} Leveraging minimax game dynamics with PatchGAN discriminators to synthesize high-frequency structural textures in paired (Pix2Pix) and unpaired (CycleGAN, MedGAN) imaging regimes~\cite{isola2017image,nie2017medical,wolterink2017deep,zhu2017unpaired,maspero2018dose,emami2018generating,yang2020synthetic,armanious2020medgan}.
+    \item \textbf{Denoising Diffusion Probabilistic Models (DDPMs):} Establishing non-adversarial, likelihood-based generative formulations capable of modeling complex anatomical probability distributions via iterative stochastic denoising and deterministic DDIM trajectories~\cite{ho2020denoising,song2021denoising,dhariwal2021diffusion,saharia2022palette,lyu2022conversion,gong2023diffuse,dorjsembe2024diffusion,ozbey2023unsupervised}.
+    \item \textbf{Hybrid, Residual, and Feature-Modulated Generative Models:} Decoupling global structural prediction from high-frequency residual diffusion using Feature-wise Linear Modulation (FiLM) and latent representations~\cite{kazerouni2023diffusion,peng2023towards,perez2018film,chung2023diffusion,thummerer2023synthrad2023}.
+\end{enumerate}
+
+This chapter conducts a comprehensive critical examination of each methodological paradigm, identifying their architectural foundations, clinical capabilities, and persistent technical bottlenecks across 35 landmark studies.
+
+\section{Classical Atlas-Based and Bulk-Density Assignment Approaches}
+
+\subsection{Bulk Tissue Density Assignment (HU Override)}
+Early investigations in MRI-based radiotherapy relied on direct tissue segmentation combined with bulk Hounsfield Unit overriding~\cite{kapanen2013t1,edmund2017review}. In this heuristic framework, the patient's planning MRI is segmented into a small number of discrete tissue classes (typically 3 to 5 compartments: air, lung, soft tissue, spongy bone, and dense cortical bone) using intensity thresholding, fuzzy c-means clustering, or dual-echo ultrashort echo time (UTE) sequences~\cite{kapanen2013t1,korhonen2014evaluation}. Each segmented voxel is subsequently assigned a uniform, literature-standard CT number (for example, $-1000\text{ HU}$ for air, $+40\text{ HU}$ for cranial soft tissue, and $+1000\text{ HU}$ for cortical bone).
+
+While computationally trivial and conceptually straightforward, bulk-density assignment models suffer from fundamental physical approximations~\cite{edmund2017review}:
+\begin{itemize}
+    \item \textbf{Neglect of Intra-Tissue Density Heterogeneity:} Real human bone possesses complex trabecular architecture, diploic spaces, and varying mineralization gradients. Enforcing a homogeneous HU override obliterates intra-organ density variations, leading to systematic dose calculation discrepancies of $2\%\text{ to }5\%$ in photon therapy and exceeding $10\%$ in proton Bragg peak range estimations~\cite{edmund2017review,siversson2015mri}.
+    \item \textbf{Segmentation Boundary Sensitivity:} Any misclassification at tissue interfaces (such as classifying thin skull bone as air due to partial volume effects) introduces severe step-function density errors that propagate directly into radiation dose calculations~\cite{korsholm2018clinical}.
+\end{itemize}
+
+\subsection{Single-Atlas and Multi-Atlas Deformable Registration}
+To capture continuous spatial attenuation gradients, atlas-based methods were subsequently introduced~\cite{sjolund2015comprehensive,gudur2014mri,burgos2014multi,dowling2015automatic}. In single-atlas approaches, a pre-acquired exemplar patient dataset containing perfectly co-registered MRI and CT volumes is used as a template. Non-rigid deformable image registration (DIR) algorithms warp the atlas MRI to match the target patient's MRI anatomy; the resulting coordinate deformation field $\boldsymbol{\phi}(\mathbf{x})$ is then applied directly to the atlas CT to construct the patient-specific synthetic CT~\cite{sjolund2015comprehensive}:
+\begin{equation}
+\mathbf{\hat{y}}_{\text{target}}(\mathbf{x}) = \mathbf{y}_{\text{atlas}}(\boldsymbol{\phi}(\mathbf{x}))
+\label{eq:atlas_dir}
+\end{equation}
+
+To mitigate single-atlas bias and morphological idiosyncrasies, multi-atlas frameworks compile databases of $N$ diverse patient templates ($N \in [10, 30]$)~\cite{sjolund2015comprehensive,burgos2014multi}. Target MRIs are registered independently to all $N$ atlas MRIs, and the warped candidate CT volumes are fused using locally weighted intensity voting or patch-based similarity matching:
+\begin{equation}
+\mathbf{\hat{y}}(\mathbf{x}) = \sum_{k=1}^N w_k(\mathbf{x}) \cdot \mathbf{y}_k(\boldsymbol{\phi}_k(\mathbf{x})), \quad \sum_{k=1}^N w_k(\mathbf{x}) = 1
+\label{eq:multi_atlas}
+\end{equation}
+where $w_k(\mathbf{x})$ reflects local patch correlation in MRI space.
+
+\subsection{Fundamental Limitations of Classical Approaches}
+Despite delivering continuous attenuation distributions superior to bulk overrides, atlas-based methods exhibit critical clinical shortcomings~\cite{edmund2017review,thummerer2023synthrad2023}:
+\begin{enumerate}[label=\textbf{(\arabic*)}]
+    \item \textbf{Inability to Model Atypical and Pathological Anatomies:} Deformable registration assumes topological homeomorphism between atlas and patient. In patients presenting with massive intracranial tumors, midline shifts, craniotomy defects, or post-surgical resection cavities, non-rigid registration inevitably fails, producing distorted anatomical hallucinations~\cite{edmund2017review}.
+    \item \textbf{Extreme Computational Latency:} Multi-atlas non-rigid registrations across large 3D patient volumes require substantial iterative optimization, routinely consuming 30 minutes to 2 hours per patient volume, which is incompatible with online adaptive radiotherapy workflows~\cite{sjolund2015comprehensive}. Furthermore, non-rigid deformable vector field (DVF) minimization scales superlinearly with spatial voxel resolution, creating severe algorithmic bottlenecks in stereotactic radiosurgery where sub-millimeter grid precision is clinically mandated. This prolonged latency prevents intra-fractional re-optimization while the patient remains immobilized on the treatment couch, exacerbating motion artifacts and treatment margins. Consequently, clinical workflows urgently necessitate feedforward deep generative architectures capable of delivering calibrated synthetic CT volumes within seconds.
+\end{enumerate}
+
+\section{Deep Convolutional Regression Networks}
+
+\subsection{Fully Convolutional Networks and U-Net Architectures}
+The advent of deep convolutional neural networks revolutionized medical image-to-image translation~\cite{ronneberger2015u,han2017mr,nie2016fully}. Han (2017) demonstrated the first end-to-end deep learning framework for cranial synthetic CT generation using a deep convolutional autoencoder architecture~\cite{han2017mr}. By learning hierarchical spatial feature representations directly from paired MRI and CT voxels, the network mapped complex non-linear intensity relationships without explicit tissue segmentation.
+
+The quintessential architecture for biomedical translation is the U-Net~\cite{ronneberger2015u}, comprising an encoder contracting path that captures contextual semantic abstraction, a symmetric decoder expanding path that enables precise spatial localization, and direct skip connections between opposing hierarchical levels. Skip connections concatenate high-resolution feature maps from encoder stages directly to decoder upsampling stages, preserving fine spatial edge boundaries that would otherwise be lost through pooling or strided convolutions~\cite{ronneberger2015u,dinkla2018mr}.
+
+\subsection{Deep Residual U-Net (ResUNet) and Gradient Dynamics}
+Standard U-Nets encounter optimization difficulties when scaled to very deep topologies due to vanishing and exploding gradient phenomena~\cite{he2016deep}. To stabilize optimization and accelerate feature propagation across deep receptive fields, Zhang et al.~\cite{zhang2018road} and Fu et al.~\cite{fu2019fast} formulated the Deep Residual U-Net (ResUNet). Within each convolutional block, identity shortcut connections are introduced:
+\begin{equation}
+\mathbf{h}_{l} = \sigma\left( \mathbf{h}_{l-1} + \mathcal{F}(\mathbf{h}_{l-1}, \mathcal{W}_l) \right)
+\label{eq:residual_block}
+\end{equation}
+where $\mathcal{F}(\cdot)$ represents stacked $3\times3$ convolutions, batch/instance normalization, and non-linear activations $\sigma(\cdot)$. Residual connections ensure uninterrupted backpropagation of error gradients:
+\begin{equation}
+\frac{\partial \mathcal{E}}{\partial \mathbf{h}_{l-1}} = \frac{\partial \mathcal{E}}{\partial \mathbf{h}_{l}} \left( \mathbf{I} + \frac{\partial \mathcal{F}}{\partial \mathbf{h}_{l-1}} \right)
+\label{eq:res_gradient}
+\end{equation}
+thereby enabling stable training of high-capacity models without degradation.
+
+\subsection{The Regression-to-the-Mean Phenomenon and High-Frequency Loss}
+Despite yielding high Peak Signal-to-Noise Ratio (PSNR) values and low average Mean Absolute Error (MAE), direct convolutional regression networks suffer from a well-known mathematical artifact termed \emph{regression-to-the-mean}~\cite{isola2017image,saharia2022palette}. When optimized using pixel-wise $L_1$ or $L_2$ objectives:
+\begin{equation}
+\theta^* = \arg\min_\theta \mathbb{E}_{\mathbf{x}, \mathbf{y}} \left[ \|\mathbf{y} - f_\theta(\mathbf{x})\|_p^p \right], \quad p \in \{1, 2\}
+\label{eq:pixel_loss}
+\end{equation}
+the network estimates the conditional expectation $\mathbb{E}[\mathbf{y} | \mathbf{x}]$ (for $p=2$) or conditional median (for $p=1$) across all plausible target textures consistent with input $\mathbf{x}$~\cite{isola2017image}. In areas of high structural ambiguity—such as complex cranial sutures, mastoid air cell honeycombs, and inner ear labyrinths—the model averages multiple conflicting high-frequency configurations. This mathematical averaging manifests as severe structural oversmoothing and attenuation underestimation in cortical bone, which directly perturbs dose calculations at bone-soft tissue interfaces~\cite{edmund2017review}.
+
+\section{Generative Adversarial Networks for Cross-Modality Synthesis}
+
+\subsection{Conditional GANs (Pix2Pix) and PatchGAN Discriminators}
+To force neural generators to synthesize crisp high-frequency textures rather than smooth ensemble averages, Isola et al. (2017) introduced the conditional Generative Adversarial Network (Pix2Pix)~\cite{isola2017image}. Adapted to medical imaging by Nie et al.~\cite{nie2017medical} and Maspero et al.~\cite{maspero2018dose}, Pix2Pix frames MRI-to-CT translation as an adversarial minimax game between a generator $G_\theta$ and an auxiliary discriminator $D_\phi$:
+\begin{equation}
+\min_G \max_D \mathcal{L}_{\text{cGAN}}(G, D) + \lambda \mathcal{L}_{L_1}(G)
+\label{eq:pix2pix_game}
+\end{equation}
+where:
+\begin{equation}
+\mathcal{L}_{\text{cGAN}}(G, D) = \mathbb{E}_{\mathbf{x}, \mathbf{y}} \left[ \log D(\mathbf{x}, \mathbf{y}) \right] + \mathbb{E}_{\mathbf{x}} \left[ \log \left( 1 - D(\mathbf{x}, G(\mathbf{x})) \right) \right]
+\label{eq:cgan_objective}
+\end{equation}
+
+A pivotal innovation of Pix2Pix is the \emph{Markovian PatchGAN} discriminator~\cite{isola2017image}. Rather than evaluating the entire image as a single global real/fake scalar, the PatchGAN restricts its receptive field to local $N \times N$ image patches (e.g., $70 \times 70$ voxels), classifying whether each sub-patch represents a realistic cross-modality pairing. By penalizing local structural incongruities, the PatchGAN functions as a learned high-frequency texture loss, compelling $G_\theta$ to recover realistic bone edges and cranial boundaries~\cite{nie2017medical,maspero2018dose,yang2020synthetic}.
+
+\subsection{Unpaired Cross-Modality Translation (CycleGAN)}
+While Pix2Pix mandates strictly registered paired training slices, acquiring geometrically congruent MRI-CT datasets is challenging in pelvic and thoracic sites due to physiological peristalsis, rectal filling, and respiratory deformation~\cite{wolterink2017deep}. To circumvent rigid registration requirements, Wolterink et al.~\cite{wolterink2017deep} and Zhu et al.~\cite{zhu2017unpaired} introduced Cycle-Consistent GANs (CycleGAN). Operating on unpaired datasets $\mathcal{X} \subset \text{MRI}$ and $\mathcal{Y} \subset \text{CT}$, CycleGAN couples dual generator-discriminator pairs with a cycle-consistency constraint:
+\begin{equation}
+\mathcal{L}_{\text{cyc}}(G_{X \to Y}, F_{Y \to X}) = \mathbb{E}_{\mathbf{x}} \left[ \|F(G(\mathbf{x})) - \mathbf{x}\|_1 \right] + \mathbb{E}_{\mathbf{y}} \left[ \|G(F(\mathbf{y})) - \mathbf{y}\|_1 \right]
+\label{eq:cycle_consistency}
+\end{equation}
+ensuring that forward translation followed by inverse synthesis recovers the original input volume.
+
+\subsection{Pathological Hallucinations and Dosimetric Vulnerabilities of GANs}
+Although GAN-based sCT models produce visually compelling images with sharp edges, their deployment in clinical radiation oncology remains intensely scrutinized due to grave safety concerns~\cite{edmund2017review,kazerouni2023diffusion,thummerer2023synthrad2023}:
+\begin{itemize}
+    \item \textbf{Adversarial Hallucination Artifacts:} The adversarial objective optimizes perceptual plausibility rather than physical photon attenuation truth~\cite{kazerouni2023diffusion}. Consequently, GAN generators are prone to hallucinating fictitious bone calcifications, missing pathological tumor lesions, or fabricating non-existent air pockets to satisfy the discriminator's local texture criteria~\cite{thummerer2023synthrad2023,armanious2020medgan}.
+    \item \textbf{Mode Collapse and Training Instability:} Adversarial optimization represents an unstable saddle-point search prone to limit cycles, mode collapse, and hyperparameter sensitivity~\cite{dhariwal2021diffusion}. In clinical regimes, such unpredictability can lead to catastrophic synthesis failures on out-of-distribution patient scans.
+\end{itemize}
+
+\section{Denoising Diffusion Probabilistic Models in Medical Imaging}
+
+\subsection{Foundations of Forward and Reverse Gaussian Processes}
+Denoising Diffusion Probabilistic Models (DDPMs) have recently emerged as the preeminent generative modeling paradigm, systematically outperforming GANs in image quality, distribution coverage, and training stability~\cite{ho2020denoising,dhariwal2021diffusion}. Grounded in non-equilibrium thermodynamics, DDPMs model the target data distribution $p(\mathbf{y}_0)$ through two dual Markov chains~\cite{ho2020denoising}:
+
+\paragraph{1. Forward Corruption Process:}
+Given a ground-truth CT slice $\mathbf{y}_0$, the forward diffusion process progressively adds isotropic Gaussian noise across $T$ discrete timesteps ($t \in \{1, \dots, T\}$) according to a predefined variance schedule $\{\beta_t\}_{t=1}^T$:
+\begin{equation}
+q(\mathbf{y}_t | \mathbf{y}_{t-1}) = \mathcal{N}\left( \mathbf{y}_t; \; \sqrt{1 - \beta_t}\mathbf{y}_{t-1}, \; \beta_t \mathbf{I} \right)
+\label{eq:forward_step}
+\end{equation}
+Using the property of Gaussian marginalization, any intermediate noisy state $\mathbf{y}_t$ can be sampled in closed form directly from $\mathbf{y}_0$:
+\begin{equation}
+\mathbf{y}_t = \sqrt{\bar{\alpha}_t} \mathbf{y}_0 + \sqrt{1 - \bar{\alpha}_t} \boldsymbol{\epsilon}, \quad \boldsymbol{\epsilon} \sim \mathcal{N}(\mathbf{0}, \mathbf{I})
+\label{eq:closed_form_yt}
+\end{equation}
+where $\alpha_t = 1 - \beta_t$ and $\bar{\alpha}_t = \prod_{s=1}^t \alpha_s$. As $t \to T$, $\bar{\alpha}_T \to 0$, causing $\mathbf{y}_T$ to converge to pure spherical Gaussian noise $\mathcal{N}(\mathbf{0}, \mathbf{I})$.
+
+\paragraph{2. Reverse Denoising Process:}
+The reverse process seeks to reconstruct the clean image $\mathbf{y}_0$ by inverting the noise corruption trajectory:
+\begin{equation}
+p_\theta(\mathbf{y}_{t-1} | \mathbf{y}_t) = \mathcal{N}\left( \mathbf{y}_{t-1}; \; \boldsymbol{\mu}_\theta(\mathbf{y}_t, t), \; \boldsymbol{\Sigma}_\theta(\mathbf{y}_t, t) \right)
+\label{eq:reverse_step}
+\end{equation}
+Ho et al.~\cite{ho2020denoising} demonstrated that parameterizing the mean $\boldsymbol{\mu}_\theta$ as a noise predictor $\boldsymbol{\epsilon}_\theta(\mathbf{y}_t, t)$ produces superior empirical sample quality under the simplified $L_2$ objective:
+\begin{equation}
+\mathcal{L}_{\text{simple}}(\theta) = \mathbb{E}_{t, \mathbf{y}_0, \boldsymbol{\epsilon}} \left[ \|\boldsymbol{\epsilon} - \boldsymbol{\epsilon}_\theta(\mathbf{y}_t, t)\|^2 \right]
+\label{eq:ho_loss}
+\end{equation}
+
+\subsection{Conditioning Paradigms for Medical Image Translation}
+To repurpose unconditional diffusion for cross-modality medical translation ($f: \text{MRI} \to \text{CT}$), the reverse trajectory must be steered by the conditioning MRI image $\mathbf{x}$~\cite{saharia2022palette,lyu2022conversion}. Saharia et al. (Palette)~\cite{saharia2022palette} established channel-wise input concatenation:
+\begin{equation}
+\mathbf{h}_{\text{in}} = [\mathbf{y}_t \mathbin{\Vert} \mathbf{x}] \in \mathbb{R}^{(C_y + C_x) \times H \times W}
+\label{eq:palette_concat}
+\end{equation}
+feeding both the corrupted target and pristine condition into the neural denoiser $\boldsymbol{\epsilon}_\theta(\mathbf{y}_t, t, \mathbf{x})$. Lyu and Wang~\cite{lyu2022conversion}, Gong et al.~\cite{gong2023diffuse}, and Dorjsembe et al.~\cite{dorjsembe2024diffusion} applied conditional diffusion to MRI-CT translation, demonstrating that diffusion models entirely eliminate GAN hallucination artifacts while preserving high-contrast skull boundaries.
+
+\subsection{Sampling Acceleration (DDIM) and Computational Latency Bottlenecks}
+The critical impediment to clinical adoption of standard DDPMs is sampling latency~\cite{song2021denoising}. Generating a single synthetic CT slice via ancestral Langevin sampling requires iterating through $T = 1000$ sequential forward neural evaluations, demanding 20 to 60 seconds per 2D slice on clinical GPUs~\cite{song2021denoising,kazerouni2023diffusion}. 
+
+Song et al.~\cite{song2021denoising} formulated Denoising Diffusion Implicit Models (DDIM), establishing a non-Markovian deterministic sampling trajectory that permits skipping timesteps along a sub-sequence $\tau = [\tau_1, \tau_2, \dots, \tau_S]$ with $S \ll T$:
+\begin{equation}
+\mathbf{y}_{\tau_{i-1}} = \sqrt{\bar{\alpha}_{\tau_{i-1}}} \left( \frac{\mathbf{y}_{\tau_i} - \sqrt{1 - \bar{\alpha}_{\tau_i}}\boldsymbol{\epsilon}_\theta(\mathbf{y}_{\tau_i}, \tau_i, \mathbf{x})}{\sqrt{\bar{\alpha}_{\tau_i}}} \right) + \sqrt{1 - \bar{\alpha}_{\tau_{i-1}}} \boldsymbol{\epsilon}_\theta(\mathbf{y}_{\tau_i}, \tau_i, \mathbf{x})
+\label{eq:ddim_trajectory}
+\end{equation}
+DDIM reduces reverse sampling to $S = 50$ steps, accelerating inference by an order of magnitude. Nonetheless, when synthesizing an entire 3D patient volume containing 150 to 300 slices, pure diffusion still incurs 3 to 8 minutes of GPU computation, motivating architectural innovations in residual diffusion.
+
+\section{Feature Conditioning and Residual Diffusion Mechanisms}
+
+\subsection{Decoupled Coarse-to-Fine Architectures}
+To alleviate the representational burden on diffusion models, recent investigations explore decoupled coarse-to-fine paradigms~\cite{kazerouni2023diffusion,perez2018film,chung2023diffusion}. In naive conditional DDPM, the network must simultaneously perform two disparate tasks:
+\begin{enumerate}
+    \item Learning global anatomical layout and soft-tissue organ boundaries from scratch.
+    \item Synthesizing fine-grained Hounsfield Unit variations and cortical bone microstructures.
+\end{enumerate}
+By decoupling these responsibilities into a deterministic Stage-1 predictor and a generative Stage-2 residual refiner, the diffusion model is relieved of reconstructing macro-scale anatomy, concentrating its modeling capacity solely on localized high-frequency residuals~\cite{perez2018film}.
+
+\subsection{Feature-Wise Linear Modulation (FiLM)}
+Integrating conditioning information solely via early channel concatenation (as in Palette) often leads to conditional neglect, where the deep layers of the denoiser lose alignment with the conditioning MRI features~\cite{perez2018film}. Feature-wise Linear Modulation (FiLM)~\cite{perez2018film} overcomes this by applying affine transformations to intermediate activation maps throughout the network:
+\begin{equation}
+\text{FiLM}(\mathbf{F}; \boldsymbol{\gamma}, \boldsymbol{\beta}) = (1.0 + \boldsymbol{\gamma}(\mathbf{c})) \odot \mathbf{F} + \boldsymbol{\beta}(\mathbf{c})
+\label{eq:film_formulation}
+\end{equation}
+where $\boldsymbol{\gamma}$ and $\boldsymbol{\beta}$ are adaptive scaling and shifting vectors dynamically predicted from the conditioning structural features $\mathbf{c}$ via $1\times1$ convolutional projections. FiLM ensures that anatomical geometry actively gates and modulates feature representations at every hierarchical depth of the generative denoiser.
+
+\section{Comprehensive Literature Survey Summary Matrix}
+To systematically analyze the trajectory of MRI-to-CT translation research and situate our five evaluated architectures, Tables~\ref{tab:lit_classical} through~\ref{tab:lit_hybrid} present a comprehensive comparative matrix across 35 landmark studies published between 2013 and 2026.
+
+\subsection{Category 1: Classical Bulk Assignment and Multi-Atlas DIR Methods}
+\begin{table}[!htbp]
+\centering
+\caption{Literature Survey: Classical Bulk Density Overrides and Multi-Atlas DIR}
+\label{tab:lit_classical}
+\footnotesize
+\renewcommand{\arraystretch}{1.2}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{} c p{2.4cm} p{2.4cm} p{2.0cm} p{2.2cm} p{5.5cm} @{}}
+\toprule
+\textbf{Sl.} & \textbf{Author \& Year} & \textbf{Architecture} & \textbf{Dataset} & \textbf{Performance} & \textbf{Critical Research Gaps} \\
+\midrule
+1 & Kapanen \& Tenhunen (2013)~\cite{kapanen2013t1} & Dual-echo bulk HU override & Cranial $T_1/T_2^*$ & Soft dose diff $<2\%$ & Assumes bone homogeneity; large step errors at cranial boundaries. \\
+\addlinespace
+2 & Sj{\"o}lund et al. (2015)~\cite{sjolund2015comprehensive} & Multi-Atlas non-rigid DIR & Cranial $T_1$ & $\text{MAE} \approx 65\text{ HU}$ & High runtime ($30\text{--}60$ min); cannot adapt to craniotomies or tumors. \\
+\addlinespace
+3 & Gudur et al. (2014)~\cite{gudur2014mri} & Atlas deformable registration & Head and Neck & $\text{MAE} = 78\text{ HU}$ & Sensitive to non-rigid swallowing artifacts and atlas template bias. \\
+\addlinespace
+4 & Korhonen et al. (2014)~\cite{korhonen2014evaluation} & Dual-model bulk segmentation & Brain (20 pts) & Dose dev $<1.5\%$ & Ignores micro-trabecular bone structures and diploic space variation. \\
+\addlinespace
+5 & Burgos et al. (2014)~\cite{burgos2014multi} & Multi-atlas patch fusion & Brain PET/MR & $\text{MAE} = 72\text{ HU}$ & High computational overhead; fails under severe pathological shift. \\
+\addlinespace
+6 & Dowling et al. (2015)~\cite{dowling2015automatic} & Atlas-based regression & Pelvis (40 pts) & $\text{MAE} \approx 58\text{ HU}$ & Prone to registration failure caused by irregular gas bowel pockets. \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\paragraph{Synthesis of Classical Paradigms:}
+As summarized in Table~\ref{tab:lit_classical}, early investigations demonstrated the fundamental feasibility of generating synthetic CT volumes from MR acquisitions to enable radiation dose planning. However, both bulk density overrides and multi-atlas deformable image registration (DIR) are constrained by severe methodological bottlenecks that limit their utility in modern precision radiotherapy:
+\begin{itemize}
+    \item \textbf{Loss of Heterogeneous Micro-Architecture:} Bulk assignment assumes uniform Hounsfield Units across segmented tissue classes (typically assigning soft tissue to $0\text{ HU}$ and cortical bone to $+1000\text{ HU}$). This gross simplification neglects physiological variations across the diploic space, inner and outer calvarial plates, and frontal/sphenoid sinuses. Dosimetrically, this introduces sharp gradient discontinuities at air-bone-soft tissue interfaces, yielding local dose calculation discrepancies exceeding $3\text{--}5\%$ in stereotactic radiosurgery (SRS).
+    \item \textbf{Computational Latency and Pathological Brittleness in DIR:} Multi-atlas DIR requires non-linear, non-rigid deformable vector field (DVF) optimization across volumetric patient databases. This optimization routinely demands 30 to 60 minutes per patient scan, precluding online adaptive replanning. Furthermore, atlas fusion relies on the assumption that patient anatomy can be smoothly mapped to healthy reference templates; consequently, it fails catastrophically when encountering atypical skull morphologies, surgical resection cavities, metallic clips, or substantial tumor mass effects.
+\end{itemize}
+These acute mechanical and dosimetric limitations catalyzed the clinical paradigm shift away from static geometric registration and toward data-driven, non-linear deep convolutional translation networks.
+
+\vspace{10pt}
+\subsection{Category 2: Deep Convolutional Neural Networks and Regression Baselines}
+\begin{table}[!htbp]
+\centering
+\caption{Literature Survey: Deep Convolutional Neural Networks and Regression Baselines}
+\label{tab:lit_cnn}
+\footnotesize
+\renewcommand{\arraystretch}{1.2}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{} c p{2.4cm} p{2.4cm} p{2.0cm} p{2.2cm} p{5.5cm} @{}}
+\toprule
+\textbf{Sl.} & \textbf{Author \& Year} & \textbf{Architecture} & \textbf{Dataset} & \textbf{Performance} & \textbf{Critical Research Gaps} \\
+\midrule
+7 & Han (2017)~\cite{han2017mr} & Deep U-Net ($L_1$ loss) & Brain (18 pts) & $\text{MAE} = 84.8\text{ HU}$, $\text{PSNR} = 27.2\text{ dB}$ & Severe regression-to-mean causes oversmoothed skull edges and low peak HU. \\
+\addlinespace
+8 & Nie et al. (2016)~\cite{nie2016fully} & Fully Convolutional FCN & Brain MRI & $\text{MAE} \approx 90\text{ HU}$ & Coarse spatial outputs; lacks multi-scale context needed for bone density. \\
+\addlinespace
+9 & Zhang et al. (2018)~\cite{zhang2018road} & Deep Residual U-Net & Remote / Medical & Improved stability & Identity skips improve convergence but pixel loss remains blurry. \\
+\addlinespace
+10 & Jin et al. (2019)~\cite{jin2019deep} & 3D Deep CNN & Pelvis (64 pts) & $\text{MAE} = 51.2\text{ HU}$ & Excessive GPU VRAM demands in 3D; smooths thin bony cortical rims. \\
+\addlinespace
+11 & Dinkla et al. (2018)~\cite{dinkla2018mr} & Dilated Convolutional Net & Brain (46 pts) & $\text{MAE} = 65\text{ HU}$ & Dilated kernels produce gridding artifacts in skull bone synthesis. \\
+\addlinespace
+12 & Fu et al. (2019)~\cite{fu2019fast} & ResUNet with Huber loss & Head/Neck & $\text{MAE} = 60.5\text{ HU}$ & Huber thresholding reduces outliers but bone error remains high ($>200\text{ HU}$). \\
+\addlinespace
+13 & Arabi et al. (2018)~\cite{arabi2018novel} & Deep autoencoder ensemble & Whole-body MR & $\text{MAE} \approx 76\text{ HU}$ & Inter-slice discontinuities and intensity drift across coil boundaries. \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\paragraph{Analysis of Deep Convolutional Regression:}
+The emergence of deep fully convolutional networks (FCNs) and residual U-Nets (Table~\ref{tab:lit_cnn}) replaced computationally prohibitive deformable registration with sub-second feedforward inference. Nevertheless, direct supervised regression architectures trained under standard voxel-wise objectives suffer from foundational mathematical and clinical constraints:
+\begin{itemize}
+    \item \textbf{The Conditional Mean Trap in Voxel-Wise Losses:} When optimizing mean absolute error ($\mathcal{L}_{L_1}$) or mean squared error ($\mathcal{L}_{L_2}$), the network mathematically converges toward the conditional expectation $\mathbb{E}[\mathbf{y} \mid \mathbf{x}]$ of the target distribution. Because MRI-to-CT translation is ill-posed---with air cavities, cortical bone, and calcifications exhibiting low signal voids in standard $T_1$-weighted MRI---the mapping from MRI intensity to CT Hounsfield Units is inherently non-injective. Consequently, regression models average conflicting plausible CT numbers, systematically compressing dense bone attenuations ($+1000\text{ to }+2000\text{ HU}$) down to an unrealistic mean range of $+400\text{ to }+600\text{ HU}$.
+    \item \textbf{Cortical Boundary Blurring and Geometric Uncertainties:} Convolutional pooling and striding introduce spatial information loss. Although long skip connections partially recover spatial context, residual U-Nets continue to produce blurry, low-pass filtered skull edges. In stereotactic radiosurgery where radiation dose drops off at steep gradients of $10\%\text{ per mm}$, this boundary blurring causes systematic dose calculation errors in target tumor volumes adjacent to the calvarium.
+\end{itemize}
+While deep convolutional regression establishes a robust, hallucination-free lower bound on macro-anatomy, its inherent blurring of thin bone boundaries necessitates more sophisticated generative modeling frameworks.
+
+\vspace{10pt}
+\subsection{Category 3: Generative Adversarial Networks (GANs)}
+\begin{table}[!htbp]
+\centering
+\caption{Literature Survey: Generative Adversarial Networks (Pix2Pix, CycleGAN, MedGAN)}
+\label{tab:lit_gan}
+\footnotesize
+\renewcommand{\arraystretch}{1.2}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{} c p{2.4cm} p{2.4cm} p{2.0cm} p{2.2cm} p{5.5cm} @{}}
+\toprule
+\textbf{Sl.} & \textbf{Author \& Year} & \textbf{Architecture} & \textbf{Dataset} & \textbf{Performance} & \textbf{Critical Research Gaps} \\
+\midrule
+14 & Isola et al. (2017)~\cite{isola2017image} & Pix2Pix Conditional GAN & Vision / Paired & Sharp edges & Adversarial mode collapse and high sensitivity to loss weighting. \\
+\addlinespace
+15 & Nie et al. (2017)~\cite{nie2017medical} & 3D Context-aware cGAN & Brain / Pelvis & $\text{MAE} = 43.7\text{ HU}$ & Vulnerable to hallucinating fictitious calcifications to satisfy discriminator. \\
+\addlinespace
+16 & Wolterink et al. (2017)~\cite{wolterink2017deep} & Unpaired CycleGAN & Brain / Heart & $\text{MAE} = 51.5\text{ HU}$ & Cycle loss allows geometric warping and deformation of small skull sutures. \\
+\addlinespace
+17 & Zhu et al. (2017)~\cite{zhu2017unpaired} & Cycle-Consistent GAN & Vision / Unpaired & Realistic texture & Inability to enforce strict biophysical HU bounds without paired truth. \\
+\addlinespace
+18 & Maspero et al. (2018)~\cite{maspero2018dose} & 2D Conditional GAN & Multi-site & $\text{MAE} = 49\text{ HU}$ & PatchGAN discriminator can synthesize false structural calcifications. \\
+\addlinespace
+19 & Emami et al. (2018)~\cite{emami2018generating} & GAN + Perceptual loss & Pelvic MRI & $\text{MAE} = 41.2\text{ HU}$ & Unstable adversarial training; delicate hyperparameter balancing required. \\
+\addlinespace
+20 & Yang et al. (2020)~\cite{yang2020synthetic} & 3D cGAN with attention & Brain (60 pts) & $\text{MAE} = 47.8\text{ HU}$ & Heavy parameter footprint ($>60\text{M}$); slow training on institutional GPUs. \\
+\addlinespace
+21 & Armanious et al. (2020)~\cite{armanious2020medgan} & MedGAN multi-loss & Brain / Pelvis & $\text{MAE} = 45.6\text{ HU}$ & Multi-component perceptual loss is prone to feature hallucination artifacts. \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\paragraph{Evaluation of Adversarial Image Synthesis:}
+To circumvent the low-pass filtering characteristic of mean-squared regression, Generative Adversarial Networks (Table~\ref{tab:lit_gan}) formulate translation as a zero-sum game between a generator $G$ and an adversarial PatchGAN discriminator $D$. While this mechanism forces the generator to synthesize sharp, high-frequency textural details, adversarial paradigms introduce hazardous vulnerabilities into clinical radiotherapy:
+\begin{itemize}
+    \item \textbf{Adversarial Hallucination and Mode Dropping:} The primary objective of the discriminator is to detect statistical anomalies in local patches rather than enforcing biophysical correctness. Consequently, generators can deceive the discriminator by hallucinating plausible-looking, high-density bone calcifications or falsely altering sinus air volumes. In treatment planning systems, hallucinated bone introduces spurious beam attenuation, causing fatal underdosing of malignant target tissues or over-radiation of sensitive optic pathways.
+    \item \textbf{Training Instability and Sensitivity to Regularization:} GAN training requires delicate equilibrium between competing minimax loss terms ($\mathcal{L}_{\text{cGAN}}$ and $\lambda \mathcal{L}_{L_1}$). As documented across multiple studies, slight variations in adversarial weighting can induce mode collapse, non-reproducible artifacts, or gradient oscillations that hinder consistent clinical translation.
+\end{itemize}
+Although conditional GANs such as Pix2Pix and MedGAN yield visually appealing edges, their vulnerability to non-anatomical hallucinations underscores the necessity for generative models possessing stable likelihood formulations and strict biophysical guarantees.
+
+\vspace{10pt}
+\subsection{Category 4: Denoising Diffusion Probabilistic Models (DDPMs)}
+\begin{table}[!htbp]
+\centering
+\caption{Literature Survey: Denoising Diffusion Probabilistic Models and Score Matching}
+\label{tab:lit_diffusion}
+\footnotesize
+\renewcommand{\arraystretch}{1.2}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{} c p{2.4cm} p{2.4cm} p{2.0cm} p{2.2cm} p{5.5cm} @{}}
+\toprule
+\textbf{Sl.} & \textbf{Author \& Year} & \textbf{Architecture} & \textbf{Dataset} & \textbf{Performance} & \textbf{Critical Research Gaps} \\
+\midrule
+22 & Ho et al. (2020)~\cite{ho2020denoising} & DDPM Gaussian denoiser & Vision / CIFAR & High fidelity & Requires $T=1000$ sequential reverse steps; clinically prohibitive latency. \\
+\addlinespace
+23 & Song et al. (2021)~\cite{song2021denoising} & DDIM Implicit non-Markov & Vision / CelebA & $10\times\text{--}20\times$ speedup & Minor high-frequency detail loss when sub-sequence steps $<25$. \\
+\addlinespace
+24 & Dhariwal \& Nichol (2021)~\cite{dhariwal2021diffusion} & Classifier-guided DDPM & ImageNet & Outperforms GAN & Guidance gradient computation doubles inference backward-pass cost. \\
+25 & Saharia et al. (2022)~\cite{saharia2022palette} & Palette concatenation DDPM & Image translation & SOTA fidelity & Prone to conditional neglect where deep denoiser loses MRI guidance. \\
+\addlinespace
+26 & Lyu \& Wang (2022)~\cite{lyu2022conversion} & Continuous Score / DDPM & Brain $T_1$ MRI & SSIM: 0.941 & Prohibitive latency ($T=1000$); unconstrained stochastic background drift. \\
+\addlinespace
+27 & Gong et al. (2023)~\cite{gong2023diffuse} & Diffuse-Synthesize DDPM & PET / CT & $\text{MAE} = 46.2\text{ HU}$ & Sampling instability when input SNR varies between scanner vendors. \\
+\addlinespace
+28 & Dorjsembe et al. (2024)~\cite{dorjsembe2024diffusion} & 3D Conditional DDPM & Brain (IXI) & $\text{PSNR} = 34.6\text{ dB}$ & Extreme 3D memory requirements; requires sub-volume tiling artifacts. \\
+\addlinespace
+29 & {\"O}zbey et al. (2023)~\cite{ozbey2023unsupervised} & Adversarial Diffusion & Multi-contrast MR & $\text{PSNR} = 33.8\text{ dB}$ & Mixing adversarial and diffusion dynamics reintroduces mode instability. \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\paragraph{Insights on Score-Based Diffusion Models:}
+Denoising Diffusion Probabilistic Models (Table~\ref{tab:lit_diffusion}) represent a paradigm leap in generative computer vision, replacing adversarial game-theoretic dynamics with stable score matching over a forward diffusion Markov process. By parameterizing the score function $\boldsymbol{\epsilon}_\theta(\mathbf{y}_t, t, \mathbf{x})$, DDPMs optimize the variational lower bound (ELBO) on log-likelihood, eliminating mode collapse and yielding unprecedented distributional fidelity. However, naive application of diffusion to medical translation encounters severe obstacles:
+\begin{itemize}
+    \item \textbf{Prohibitive Sampling Latency in Standard DDPM:} The classical reverse diffusion chain requires $T = 1000$ sequential forward evaluations of the noise-prediction network. For a full volumetric cranial CT study comprising 150 to 300 slices, standard ancestral sampling requires over 15 to 25 minutes of GPU computation. This makes standard DDPM unfeasible for adaptive clinical workflows where patient treatment plans must be recalculated in real-time.
+    \item \textbf{Stochastic Background Drift and Conditional Neglect:} When initialized from unconstrained Gaussian noise $\mathbf{y}_T \sim \mathcal{N}(\mathbf{0}, \mathbf{I})$ with conditioning provided merely through early channel concatenation (as in Palette), stochastic sampling exhibits low-frequency intensity drift in uniform soft tissues and background air. In deep layers of the denoiser, feature representations can become decoupled from the input MRI, degrading bone boundary sharpness.
+\end{itemize}
+
+Accelerated non-Markovian deterministic sampling (DDIM) reduces reverse trajectories down to 50 steps, but resolving stochastic drift necessitates specialized feature-conditioning architectures. Specifically, while setting the stochastic noise variance parameter to zero ($\sigma_t = 0$) guarantees a deterministic trajectory, aggressive step decimation can trigger compounding discretization errors if intermediate score predictions diverge from the true manifold. In radiotherapy synthesis, where Hounsfield Units must strictly adhere to physical electron density thresholds (e.g., $-1000\text{ HU}$ for air, $0\text{ HU}$ for water, and $>+1000\text{ HU}$ for cortical bone), even subtle latent drift induces intolerable dosimetric deviations. Furthermore, standard channel-concatenation conditioning fails to preserve high-frequency edge priors across contracting bottleneck layers. To achieve clinically reliable synthesis within sub-minute execution windows, generative diffusion must be augmented with explicit structural anchors and multi-scale feature-wise modulation mechanisms that strictly preserve patient geometry throughout reverse inference.
+
+\vspace{10pt}
+\subsection{Category 5: Hybrid, Residual and Feature-Modulated Diffusion Architectures}
+\begin{table}[!htbp]
+\centering
+\caption{Literature Survey: Hybrid, Residual and Feature-Modulated Diffusion Paradigms}
+\label{tab:lit_hybrid}
+\footnotesize
+\renewcommand{\arraystretch}{1.2}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{} c p{2.4cm} p{2.4cm} p{2.0cm} p{2.2cm} p{5.5cm} @{}}
+\toprule
+\textbf{Sl.} & \textbf{Author \& Year} & \textbf{Architecture} & \textbf{Dataset} & \textbf{Performance} & \textbf{Critical Research Gaps} \\
+\midrule
+30 & Kazerouni et al. (2023)~\cite{kazerouni2023diffusion} & Comprehensive Survey & Medical Imaging & Method taxonomy & Highlights lack of standardized multi-model benchmarking on identical splits. \\
+\addlinespace
+31 & Peng et al. (2023)~\cite{peng2023towards} & Latent Diffusion (LDM) & Pelvis / H\&N & $\text{MAE} = 48.3\text{ HU}$ & VQ-VAE latent downsampling loses delicate cranial diploic microstructures. \\
+\addlinespace
+32 & Perez et al. (2018)~\cite{perez2018film} & FiLM Affine Modulation & Visual Reasoning & Adaptive gating & Established affine modulation for dynamic feature steering across depths. \\
+\addlinespace
+33 & Chung et al. (2023)~\cite{chung2023diffusion} & Diffusion Posterior Sampling & Inverse problems & Proven bounds & Requires Jacobian-vector approximation which slows clinical runtime. \\
+\addlinespace
+34 & Thummerer et al. (2023)~\cite{thummerer2023synthrad2023} & SynthRAD2023 Challenge & Brain / Pelvis & Median: $55\text{--}75\text{ HU}$ & Multi-center grand challenge proving single models underperform across tissue types. \\
+\addlinespace
+35 & \textbf{Present Study (2026)} & \textbf{CCR-Diffusion (Two-Stage + FiLM)} & \textbf{SynthRAD2023 Brain (363 test slices)} & \textbf{Exhaustive 5-Model Benchmark} & \textbf{Decouples coarse structural anchor from residual diffusion, eliminating drift and bone error.} \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\paragraph{Emergence of Two-Stage Decoupled Diffusion:}
+The studies surveyed in Table~\ref{tab:lit_hybrid} establish the cutting edge of cross-modality medical synthesis: decoupling structural macro-geometry from high-frequency residual denoising:
+\begin{itemize}
+    \item \textbf{Decoupled Coarse-to-Fine Generation:} By utilizing a deterministic Stage-1 network to anchor macroscopic anatomy and soft-tissue boundaries, the generative Stage-2 diffusion model is relieved of learning global patient orientation from scratch. Instead, the denoiser focuses its entire expressive capacity on synthesizing fine cortical bone mineralization, diploic spaces, and tissue-bone transition interfaces.
+    \item \textbf{Multi-Scale Feature Modulation via FiLM:} To prevent conditional neglect, Feature-wise Linear Modulation (FiLM) dynamically injects multi-scale structural guidance into every hierarchical level of the denoiser through adaptive scaling ($\boldsymbol{\gamma}$) and shifting ($\boldsymbol{\beta}$) vectors. This mathematical gating guarantees that synthesized bone structures remain strictly aligned with the true underlying patient anatomy.
+\end{itemize}
+This two-stage formulation establishes the theoretical framework for the Cross-Conditioned Residual Diffusion (CCR-Diffusion) model, resolving the longstanding tension between regression blur and adversarial hallucination.
+
+\vspace{10pt}
+\section{Critical Research Gaps and Problem Formulation Insights}
+A rigorous synthesis of the 35 surveyed studies reveals four fundamental research gaps that directly motivate the experimental benchmark and architectural designs of this major project:
+\begin{enumerate}[label=\textbf{Gap \arabic*:}]
+    \item \textbf{Absence of Standardized, Multi-Model Benchmarking Under Identical Conditions:} Although literature reports diverse models spanning CNNs, GANs, and DDPMs, direct performance comparisons across papers are compromised by divergent datasets, proprietary normalization windows, inconsistent split isolation strategies, and differing anatomical evaluation regions. There exists an acute need for a rigorous, unified benchmark evaluating ResUNet, Pix2Pix, cDDPM, Attention-CDDPM, and Residual Diffusion under strictly identical patient splits (Seed 42) and evaluation metrics ($\text{MAE}_{\text{all}}$, $\text{MAE}_{\text{bone}}$, SSIM, PSNR, FPS, VRAM).
+    \item \textbf{The Core Dilemma Between Regression Blur and Adversarial Hallucination:} Pure regression architectures (ResUNet) guarantee global stability and zero hallucinations but fail to accurately synthesize dense cortical bone structures ($+1000\text{ to }+2500\text{ HU}$) due to regression-to-the-mean. Conversely, conditional GANs (Pix2Pix) synthesize sharp bone textures but remain vulnerable to unpredictable structural hallucinations, presenting severe safety hazards in radiation treatment planning.
+    \item \textbf{Unconstrained Diffusion Drift and Sampling Latency in Clinical Workflows:} While conditional DDPMs resolve GAN instability and generate high-fidelity distributions, unconstrained diffusion over full dynamic ranges ($[-1000\text{ HU}, +3000\text{ HU}]$) suffers from stochastic drift in background and soft tissues. Moreover, standard DDPM sampling latency remains clinically prohibitive.
+    \item \textbf{Decoupling Macro-Anatomy from High-Frequency Residual Diffusion:} Existing medical diffusion models force a single network to concurrently resolve both macro-scale organ geometries and fine microstructural bone calcifications. A decoupled architecture—wherein a deterministic Stage-1 network establishes a coarse anatomical prior while a FiLM-guided Stage-2 diffusion model denoises normalized high-frequency residuals—represents an unexplored, theoretically sound solution to achieve both structural invariance and bone fidelity.
+\end{enumerate}
+
+These identified gaps establish the technical foundation for the system architecture, mathematical foundations, and implementation details presented in Chapter 3.

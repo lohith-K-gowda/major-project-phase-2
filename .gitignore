@@ -1,0 +1,22 @@
+# Raw Datasets & Giant Model Weights (>100MB, exceeds GitHub limits)
+Task1_brain.zip
+synthrad_model3_cddpm_from_scratch_deliverables.zip
+synthrad_ccr_diffusion_complete_results.zip
+synthrad_model2_pix2pix_deliverables.zip
+mse+l1-resunet.zip
+synthrad_ccr_diffusion_final_deliverables.zip
+
+# Previous / unrelated projects
+MAJ/
+
+# Python & LaTeX build artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.ipynb_checkpoints/
+*.aux
+*.log
+*.out
+*.synctex.gz
+*.fls
+*.fdb_latexmk

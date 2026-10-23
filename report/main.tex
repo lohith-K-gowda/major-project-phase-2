@@ -1,0 +1,404 @@
+% ============================================================
+%  VTU Major Project Report (22 Scheme, CSE/AIML/ISE)
+%  Deep Learning-Based MRI-TO-CT Image Translation Using Generative Models
+%  Compile with: pdflatex main.tex -> bibtex main -> pdflatex main.tex (twice)
+% ============================================================
+\documentclass[12pt,a4paper]{report}
+
+% ------------------------------------------------------------
+%  CONFIGURABLE CONSTANTS
+% ------------------------------------------------------------
+\newcommand{\ReportTitle}{Deep Learning-Based MRI-TO-CT Image Translation Using Generative Models}
+\newcommand{\CollegeName}{JYOTHY INSTITUTE OF TECHNOLOGY}
+\newcommand{\DeptText}{Dept of CSE, JIT, Bengaluru}
+\newcommand{\YearText}{2026--2027}
+
+% --- Page margins (VTU: wider left margin for binding) ---
+\newcommand{\MarginLeft}{1.25in}
+\newcommand{\MarginRight}{1in}
+\newcommand{\MarginTop}{1in}
+\newcommand{\MarginBottom}{1in}
+
+% --- Header / footer geometry (configured to prevent overlap) ---
+\newcommand{\HeaderHeight}{26pt}     % ample height for 11pt bold header text
+\newcommand{\HeaderSkip}{18pt}       % clear gap between header rule and top of body text
+\newcommand{\FooterSkip}{36pt}       % ample gap between body text bottom and footer text
+\newcommand{\RuleThick}{2.5pt}       % thick rule of the double line
+\newcommand{\RuleThin}{0.6pt}        % thin rule of the double line
+\newcommand{\RuleGap}{1.5pt}         % white gap between the two rules
+
+% --- Heading sizes and spacing (VTU Report Writing Guide compliant) ---
+\newcommand{\ChapLabelSize}{16}      % "Chapter-1"
+\newcommand{\ChapTitleSize}{18}      % "INTRODUCTION"
+\newcommand{\ChapLabelToTitle}{4pt}  % gap: Chapter-N -> TITLE
+\newcommand{\ChapAfter}{14pt}        % gap: chapter title -> first sub-heading
+\newcommand{\SecSize}{16}            % 1.1 Motivation
+\newcommand{\SecBefore}{12pt}        % space above a section
+\newcommand{\SecAfter}{4pt}          % space below a section
+\newcommand{\SubsecSize}{14}         % 1.1.1 Subsection
+\newcommand{\BodyStretch}{1.5}       % line spacing (VTU: 1.5)
+\newcommand{\ParaSkip}{6pt}          % space between paragraphs
+% ------------------------------------------------------------
+
+\usepackage[T1]{fontenc}
+\usepackage{tgtermes}                % Times New Roman equivalent font
+\usepackage[a4paper,
+            left=\MarginLeft, right=\MarginRight,
+            top=\MarginTop,   bottom=\MarginBottom,
+            headheight=\HeaderHeight, headsep=\HeaderSkip,
+            footskip=\FooterSkip]{geometry}
+\usepackage{xcolor}
+\definecolor{RuleColor}{RGB}{132,60,12}   % VTU standard brown double-rule
+\definecolor{NavyBlue}{RGB}{27,54,93}
+\usepackage{setspace}
+\usepackage{enumitem}
+\usepackage{microtype}
+\usepackage{fancyhdr}
+\usepackage[explicit]{titlesec}
+\usepackage{graphicx}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{tikz}
+\usetikzlibrary{trees,positioning,shapes,arrows}
+\usepackage{colortbl}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{longtable}
+\usepackage{ragged2e}
+\usepackage{makecell}
+\usepackage{listings}
+\lstset{
+  basicstyle=\ttfamily\scriptsize,
+  breaklines=true,
+  frame=single,
+  rulecolor=\color{black!30},
+  backgroundcolor=\color{gray!4},
+  keywordstyle=\color{blue}\bfseries,
+  commentstyle=\color{green!50!black}\itshape,
+  stringstyle=\color{red!70!black},
+  numbers=none,
+  tabsize=4,
+  showstringspaces=false
+}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{float}
+\usepackage{cite}
+\usepackage[hidelinks]{hyperref}
+
+% Top-align float pages instead of vertically centering them
+\makeatletter
+\setlength{\@fptop}{0pt}
+\setlength{\@fpbot}{0pt plus 1fil}
+\makeatother
+
+% Float handling parameters to prevent large whitespace gaps
+\renewcommand{\topfraction}{0.95}
+\renewcommand{\bottomfraction}{0.95}
+\renewcommand{\textfraction}{0.05}
+\renewcommand{\floatpagefraction}{0.80}
+\setcounter{topnumber}{4}
+\setcounter{bottomnumber}{4}
+\setcounter{totalnumber}{8}
+\setlength{\floatsep}{10pt plus 2pt minus 2pt}
+\setlength{\textfloatsep}{12pt plus 2pt minus 4pt}
+\setlength{\intextsep}{10pt plus 2pt minus 2pt}
+
+% Centered X column for tabularx
+\newcolumntype{Y}{>{\centering\arraybackslash}X}
+
+% ---------- Body text formatting ----------
+\setstretch{\BodyStretch}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{\ParaSkip}
+\raggedbottom
+\setlist[itemize]{label=\textbullet, leftmargin=*, itemsep=0pt,
+                  topsep=2pt, parsep=0pt, partopsep=0pt}
+\setlist[enumerate]{leftmargin=*, itemsep=0pt,
+                    topsep=2pt, parsep=0pt, partopsep=0pt}
+
+% ---------- Header / footer : DOUBLE LINES ----------
+\newlength{\RuleTotal}
+\setlength{\RuleTotal}{\dimexpr\RuleThick+\RuleGap+\RuleThin\relax}
+
+% Header: thick rule on top, thin rule below it
+\renewcommand{\headrulewidth}{\RuleTotal}
+\renewcommand{\headrule}{{\color{RuleColor}%
+  \hrule width\headwidth height\RuleThick \vskip\RuleGap
+  \hrule width\headwidth height\RuleThin}}
+
+% Footer: thin rule on top, thick rule below it
+\renewcommand{\footrulewidth}{\RuleTotal}
+\renewcommand{\footrule}{{\color{RuleColor}%
+  \hrule width\headwidth height\RuleThin \vskip\RuleGap
+  \hrule width\headwidth height\RuleThick \vskip 8pt}}
+
+% Standard page style
+\fancypagestyle{vtu}{%
+  \fancyhf{}
+  \fancyhead[L]{\fontsize{10.5}{13}\selectfont\bfseries\ReportTitle}
+  \fancyfoot[L]{\sffamily\small\DeptText}
+  \fancyfoot[C]{\sffamily\small\YearText}
+  \fancyfoot[R]{\sffamily\small Page \thepage}
+}
+\pagestyle{vtu}
+
+% Chapter pages style (maintains sticky header rule and clean footer)
+\fancypagestyle{plain}{%
+  \fancyhf{}
+  \fancyhead[L]{\fontsize{10.5}{13}\selectfont\bfseries\ReportTitle}
+  \fancyfoot[L]{\sffamily\small\DeptText}
+  \fancyfoot[C]{\sffamily\small\YearText}
+  \fancyfoot[R]{\sffamily\small Page \thepage}
+  \renewcommand{\headrulewidth}{\RuleTotal}
+  \renewcommand{\headrule}{{\color{RuleColor}%
+    \hrule width\headwidth height\RuleThick \vskip\RuleGap
+    \hrule width\headwidth height\RuleThin}}
+  \renewcommand{\footrulewidth}{\RuleTotal}
+  \renewcommand{\footrule}{{\color{RuleColor}%
+    \hrule width\headwidth height\RuleThin \vskip\RuleGap
+    \hrule width\headwidth height\RuleThick \vskip 8pt}}
+}
+
+% Frontmatter page style (roman numbering)
+\fancypagestyle{frontmatterstyle}{%
+  \fancyhf{}
+  \fancyhead[L]{\fontsize{10.5}{13}\selectfont\bfseries\ReportTitle}
+  \fancyfoot[L]{\sffamily\small\DeptText}
+  \fancyfoot[C]{\sffamily\small\YearText}
+  \fancyfoot[R]{\sffamily\small \thepage}
+  \renewcommand{\headrulewidth}{\RuleTotal}
+  \renewcommand{\headrule}{{\color{RuleColor}%
+    \hrule width\headwidth height\RuleThick \vskip\RuleGap
+    \hrule width\headwidth height\RuleThin}}
+  \renewcommand{\footrulewidth}{\RuleTotal}
+  \renewcommand{\footrule}{{\color{RuleColor}%
+    \hrule width\headwidth height\RuleThin \vskip\RuleGap
+    \hrule width\headwidth height\RuleThick \vskip 8pt}}
+}
+
+% ---------- Chapter / section headings ----------
+\titleformat{\chapter}[display]
+  {\bfseries}
+  {\raggedright\fontsize{\ChapLabelSize}{\numexpr\ChapLabelSize+4\relax}\selectfont Chapter-\thechapter}
+  {\ChapLabelToTitle}
+  {\centering\fontsize{\ChapTitleSize}{\numexpr\ChapTitleSize+4\relax}\selectfont\MakeUppercase{#1}}
+\titlespacing*{\chapter}{0pt}{-10pt}{\ChapAfter}
+
+\titleformat{\section}
+  {\bfseries\fontsize{\SecSize}{\numexpr\SecSize+3\relax}\selectfont}
+  {\thesection}{1em}{#1}
+\titlespacing*{\section}{0pt}{\SecBefore}{\SecAfter}
+
+\titleformat{\subsection}
+  {\bfseries\fontsize{\SubsecSize}{\numexpr\SubsecSize+3\relax}\selectfont}
+  {\thesubsection}{1em}{#1}
+\titlespacing*{\subsection}{0pt}{10pt}{3pt}
+
+\renewcommand{\chaptermark}[1]{}
+
+% ============================================================
+\begin{document}
+
+% ------------------------------------------------------------
+%  COVER / TITLE PAGE (No headers/footers)
+% ------------------------------------------------------------
+\begin{titlepage}
+\thispagestyle{empty}
+\centering
+
+{\fontsize{18}{22}\selectfont\bfseries VISVESVARAYA TECHNOLOGICAL UNIVERSITY}\\[4pt]
+{\fontsize{14}{17}\selectfont\textbf{``Jnana Sangama'', Belagavi -- 590018, Karnataka}}\\[12pt]
+
+\includegraphics[width=2.5cm]{vtu_logo.png}\\[12pt]
+
+{\fontsize{13}{16}\selectfont\textbf{A MAJOR PROJECT REPORT ON}}\\[8pt]
+
+{\fontsize{16}{20}\selectfont\bfseries\color{NavyBlue}%
+DEEP LEARNING-BASED MRI-TO-CT IMAGE TRANSLATION USING GENERATIVE MODELS}\\[6pt]
+{\fontsize{12}{15}\selectfont\textbf{\textit{A Rigorous Five-Model Benchmark and Anatomical Invariant Residual Diffusion Framework for MRI-Only Radiotherapy Planning on SynthRAD2023}}}\\[14pt]
+
+{\fontsize{12}{15}\selectfont\textit{Submitted in partial fulfillment of the requirements for the award of the degree of}}\\[4pt]
+{\fontsize{14}{17}\selectfont\textbf{BACHELOR OF ENGINEERING}}\\[2pt]
+{\fontsize{12}{15}\selectfont in}\\[2pt]
+{\fontsize{14}{17}\selectfont\textbf{COMPUTER SCIENCE AND ENGINEERING}}\\[14pt]
+
+\begin{minipage}[t]{0.48\textwidth}
+\raggedright
+\textbf{\underline{Submitted by:}}\\[4pt]
+\textbf{Lohith K} \hfill (1JT22CS000)\\
+\textbf{Student 2} \hfill (1JT22CS000)\\
+\textbf{Student 3} \hfill (1JT22CS000)\\
+\textbf{Student 4} \hfill (1JT22CS000)
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.48\textwidth}
+\raggedright
+\textbf{\underline{Under the Guidance of:}}\\[4pt]
+\textbf{Dr. Faculty Guide}, M.Tech., Ph.D.\\
+Associate Professor\\
+Dept. of Computer Science \& Engg.\\
+Jyothy Institute of Technology
+\end{minipage}
+
+\vfill
+
+\includegraphics[width=2.2cm]{vtu_logo.png}\\[8pt]
+{\fontsize{15}{18}\selectfont\bfseries DEPARTMENT OF COMPUTER SCIENCE AND ENGINEERING}\\[4pt]
+{\fontsize{16}{20}\selectfont\bfseries \CollegeName}\\[2pt]
+{\fontsize{11}{14}\selectfont (Affiliated to Visvesvaraya Technological University, Belagavi, Approved by AICTE, New Delhi)}\\[2pt]
+{\fontsize{12}{15}\selectfont Tataguni, Kanakapura Road, Bengaluru -- 560082}\\[4pt]
+{\fontsize{13}{16}\selectfont\textbf{Academic Year: 2025 -- 2026}}
+
+\end{titlepage}
+
+% ------------------------------------------------------------
+%  FRONT MATTER (Roman numbering)
+% ------------------------------------------------------------
+\pagenumbering{roman}
+\setcounter{page}{2}
+\pagestyle{frontmatterstyle}
+
+% --- CERTIFICATE ---
+\newpage
+\begin{center}
+{\fontsize{16}{20}\selectfont\bfseries \CollegeName}\\[2pt]
+{\fontsize{11}{14}\selectfont Tataguni, Kanakapura Road, Bengaluru -- 560082}\\[4pt]
+{\fontsize{13}{16}\selectfont\textbf{DEPARTMENT OF COMPUTER SCIENCE AND ENGINEERING}}\\[12pt]
+\includegraphics[width=2.0cm]{vtu_logo.png}\\[8pt]
+{\fontsize{16}{20}\selectfont\bfseries\underline{CERTIFICATE}}
+\end{center}
+
+\vspace{10pt}
+\noindent This is to certify that the Major Project dissertation entitled \textbf{``DEEP LEARNING-BASED MRI-TO-CT IMAGE TRANSLATION USING GENERATIVE MODELS: A Rigorous Five-Model Benchmark and Anatomical Invariant Residual Diffusion Framework for MRI-Only Radiotherapy Planning on SynthRAD2023''} is a bona fide work carried out by \textbf{Lohith K and Team} in partial fulfillment for the award of Bachelor of Engineering in \textbf{Computer Science and Engineering} of \textbf{Visvesvaraya Technological University, Belagavi} during the academic year 2026--2027. It is certified that all corrections/suggestions indicated for Internal Assessment have been incorporated in the Report deposited in the departmental library. The project report has been approved as it satisfies the academic requirements in respect of project work prescribed for the said degree.
+
+\vspace{35pt}
+\noindent
+\begin{minipage}[t]{0.32\textwidth}
+\raggedright
+\textbf{Signature of Guide}\\
+\small (Dr. Faculty Guide)\\
+Associate Professor\\
+Dept. of CSE, JIT
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.32\textwidth}
+\centering
+\textbf{Signature of HOD}\\
+\small (Dr. Head of Department)\\
+Professor \& HOD\\
+Dept. of CSE, JIT
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.32\textwidth}
+\raggedleft
+\textbf{Signature of Principal}\\
+\small (Dr. Principal)\\
+Principal\\
+JIT, Bengaluru
+\end{minipage}
+
+\vspace{45pt}
+\begin{center}
+\textbf{External Examiners}
+\end{center}
+\vspace{10pt}
+\noindent
+Name of the Examiner \hfill Signature with Date\\[14pt]
+1. \rule{6cm}{0.4pt} \hfill \rule{4cm}{0.4pt}\\[14pt]
+2. \rule{6cm}{0.4pt} \hfill \rule{4cm}{0.4pt}
+
+% --- DECLARATION ---
+\newpage
+\begin{center}
+{\fontsize{16}{20}\selectfont\bfseries\underline{DECLARATION}}
+\end{center}
+\vspace{15pt}
+We, the students of eighth semester Bachelor of Engineering in Computer Science and Engineering, Jyothy Institute of Technology, Bengaluru, hereby declare that the major project work entitled \textbf{``DEEP LEARNING-BASED MRI-TO-CT IMAGE TRANSLATION USING GENERATIVE MODELS''} has been independently carried out by us under the supervision of \textbf{Dr. Faculty Guide}, Associate Professor, Department of Computer Science and Engineering, Jyothy Institute of Technology, Bengaluru, in partial fulfillment of the academic requirements for the award of Bachelor of Engineering in Computer Science and Engineering by Visvesvaraya Technological University, Belagavi, during the academic year 2026--2027. We further declare that the matter embodied in this report has not been submitted previously to any other university or institute for the award of any degree or diploma.
+
+\vspace{35pt}
+\noindent
+\textbf{Place:} Bengaluru\\
+\textbf{Date:} \today \hfill \textbf{Lohith K \& Team}
+
+% --- ACKNOWLEDGEMENT ---
+\newpage
+\begin{center}
+{\fontsize{16}{20}\selectfont\bfseries\underline{ACKNOWLEDGEMENT}}
+\end{center}
+\vspace{15pt}
+The satisfaction and euphoria that accompany the successful completion of any task would be incomplete without expressing gratitude to the people who made it possible, whose constant guidance and encouragement served as a beacon of light throughout our project tenure.
+
+We express our sincere gratitude to our esteemed institution, \textbf{\CollegeName}, for providing the state-of-the-art computational infrastructure, laboratories, and academic atmosphere conducive to conducting this advanced generative artificial intelligence and clinical radiotherapy research.
+
+We express our profound gratitude to our respected Principal, \textbf{Dr. Principal}, for his constant support and administrative encouragement.
+
+We extend our heartfelt gratitude to \textbf{Dr. Head of Department}, Professor and Head, Department of Computer Science and Engineering, for providing necessary departmental resources, valuable suggestions, and constant motivation.
+
+We express our deepest sense of gratitude and indebtedness to our guide, \textbf{Dr. Faculty Guide}, Associate Professor, Department of Computer Science and Engineering, for his invaluable guidance, technical insights, inspiring discussions, and patient reviews at every stage of this project.
+
+Finally, we convey our sincere regards to our family members, faculty colleagues, and friends for their continuous moral support and encouragement throughout our academic endeavors.
+
+% --- ABSTRACT ---
+\newpage
+\begin{center}
+{\fontsize{16}{20}\selectfont\bfseries\underline{ABSTRACT}}
+\end{center}
+\vspace{15pt}
+Magnetic Resonance Imaging (MRI)-guided radiation therapy offers unparalleled soft-tissue contrast for cranial target volume delineation and organ-at-risk (OAR) preservation without exposing oncology patients to ionizing radiation; however, MRI voxel intensities reflect proton relaxation physics ($T_1, T_2, T_2^*$) rather than physical electron densities or Hounsfield Units (HU) indispensable for photon attenuation correction and Monte Carlo dose calculation. Consequently, current clinical practice enforces dual-modality MRI and Computed Tomography (CT) acquisition, which introduces inter-modality rigid and deformable registration errors (1--5\,mm), anatomical organ deformation, cumulative radiation burden, and elevated healthcare costs. To eliminate dual-modality dependencies and facilitate an end-to-end, single-modality MRI-only radiotherapy workflow, this project conducts a comprehensive comparative benchmark and introduces an architectural advancement for high-fidelity synthetic CT (sCT) synthesis. Formulated on the standardized SynthRAD2023 Grand Challenge Task~1 (Brain) cohort, five distinct deep learning and generative model paradigms are systematically evaluated under strictly identical patient-level data partitions (Seed 42, 80\%/20\% split across 363 total volumes and 363 frozen held-out test slices from 6 patients): a supervised baseline ResUNet with multi-scale residual blocks, an adversarial image-to-image translation network (Pix2Pix cGAN), an unconstrained Conditional Denoising Diffusion Probabilistic Model trained from scratch (cDDPM), a state-of-the-art residual diffusion model with self-attention gating (SOTA-CDDPM), and a novel Cross-Conditioned Residual Diffusion Network (CCR-Diffusion) incorporating multi-scale Feature-wise Linear Modulation (FiLM) and structural spatial priors. Extensive quantitative evaluation across the held-out test cohort demonstrates that the proposed CCR-Diffusion framework achieves state-of-the-art anatomical fidelity with a Masked Structural Similarity Index Measure (SSIM) of $0.8864 \pm 0.0251$ and Global SSIM of $0.9405 \pm 0.0102$, substantially outperforming unconstrained diffusion ($0.7473$) and paired adversarial synthesis ($0.8245$), while simultaneously achieving superior radiometric precision with a Masked Mean Absolute Error (MAE) of $0.0391 \pm 0.0082$ and Root Mean Square Error (RMSE) of $0.0982 \pm 0.0088$. By effectively mitigating the Gaussian stochastic drift and skull boundary blurring characteristic of standard diffusion architectures, CCR-Diffusion successfully resolves high-density cortical bone margins ($\text{HU} > 300$) and fine cerebrovascular interfaces, confirming its diagnostic fidelity and establishing an accurate, clinically viable computational framework for MRI-guided radiation therapy treatment planning.
+
+\vspace{15pt}
+\noindent \textbf{Keywords:} Synthetic CT (sCT), MRI-Only Radiotherapy, Generative Diffusion Models, CCR-Diffusion, SynthRAD2023, Denoising Diffusion Probabilistic Models (DDPM), Pix2Pix cGAN, ResUNet, Radiation Dosimetry.
+
+% --- TABLE OF CONTENTS ---
+\newpage
+\tableofcontents
+
+% --- LIST OF FIGURES ---
+\newpage
+\listoffigures
+
+% --- LIST OF TABLES ---
+\newpage
+\listoftables
+
+% ------------------------------------------------------------
+%  MAIN BODY (Arabic numbering)
+% ------------------------------------------------------------
+\newpage
+\pagenumbering{arabic}
+\setcounter{page}{1}
+\pagestyle{vtu}
+
+% Chapter 1: Introduction
+\include{chapters/chap1_intro}
+
+% Chapter 2: Literature Survey
+\include{chapters/chap2_literature}
+
+% Chapter 3: System Requirements and Methodology
+\include{chapters/chap3_methodology}
+
+% Chapter 4: Implementation Details
+\include{chapters/chap4_implementation}
+
+% Chapter 5: Results, Quantitative Evaluation, and Discussion
+\include{chapters/chap5_results}
+
+% Chapter 6: Conclusion and Future Scope
+\include{chapters/chap6_conclusion}
+
+% ------------------------------------------------------------
+%  REFERENCES (Arranged Year-Descending: 2024 to 2004)
+% ------------------------------------------------------------
+\newpage
+\input{chapters/bibliography.tex}
+
+% ------------------------------------------------------------
+%  APPENDICES
+% ------------------------------------------------------------
+\newpage
+\input{chapters/appendices.tex}
+
+\end{document}

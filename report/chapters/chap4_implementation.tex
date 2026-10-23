@@ -1,0 +1,280 @@
+\chapter{Implementation Details}
+
+\section{Introduction}
+The clinical translation of generative deep learning models for MRI-to-CT synthesis demands rigorous software engineering, modular codebase design, deterministic reproducibility, and strict adherence to data leakage prevention protocols. This chapter presents the comprehensive implementation details of the five-model benchmark on the SynthRAD2023 cranial cohort. 
+
+Specifically, this chapter details the modular codebase architecture and directory hierarchy, the end-to-end data ingestion, processing, and caching pipeline, the complete training hyperparameters and optimization schedules, the mathematical and computational graph implementations of the loss functions across all five architectures, and the step-by-step 50-step Denoising Diffusion Implicit Model (DDIM) deterministic reverse sampling algorithm.
+
+\section{Modular Codebase Architecture and Directory Hierarchy}
+To facilitate modular benchmarking, reproducible execution across heterogeneous GPU clusters (including NVIDIA Tesla T4 and RTX 4090 accelerators), and seamless checkpoint management, the project codebase is organized into an enterprise-grade directory structure as depicted in Figure~\ref{fig:codebase_tree}.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+  grow via three points={one child at (0.8,-0.7) and
+  two children at (0.8,-0.7) and (0.8,-1.4)},
+  edge from parent path={(\tikzparentnode.south) |- (\tikzchildnode.west)},
+  every node/.style={draw=none, anchor=west, font=\ttfamily\footnotesize},
+  selected/.style={draw, fill=blue!10, rounded corners},
+  folder/.style={font=\bfseries\ttfamily\footnotesize\color{NavyBlue}}
+]
+  \node [folder] {synthrad-mri-to-ct/}
+    child { node [folder] {configs/}
+      child { node {synthrad\_model4\_config.json} }
+      child { node {hyperparameters\_benchmark.yaml} }
+    }
+    child [missing] {}
+    child [missing] {}
+    child { node [folder] {datasets/}
+      child { node [folder] {synthrad\_png/}
+        child { node {mri/ (3,614 paired 2D axial slices)} }
+        child { node {ct/ (3,614 calibrated ground-truth CT slices)} }
+        child { node {masks/ (strictly MRI-derived cranial masks)} }
+      }
+    }
+    child [missing] {}
+    child [missing] {}
+    child [missing] {}
+    child [missing] {}
+    child { node [folder] {models/}
+      child { node {resunet\_baseline.py (Model 1)} }
+      child { node {pix2pix\_cgan.py (Model 2)} }
+      child { node {cddpm\_scratch.py (Model 3)} }
+      child { node {sota\_cddpm\_attention.py (Model 4)} }
+      child { node {ccr\_diffusion\_film.py (Model 5: Proposed)} }
+    }
+    child [missing] {}
+    child [missing] {}
+    child [missing] {}
+    child [missing] {}
+    child [missing] {}
+    child { node [folder] {pipelines/}
+      child { node {dataset\_loader.py (leakage-free stratified loader)} }
+      child { node {intensity\_transform.py (HU [-1000, 1500] scaling)} }
+      child { node {ddim\_sampler.py (accelerated 50-step engine)} }
+      child { node {evaluator\_metrics.py (MAE, SSIM, PSNR, Bone Dice)} }
+    }
+    child [missing] {}
+    child [missing] {}
+    child [missing] {}
+    child [missing] {}
+    child { node [folder] {checkpoints/}
+      child { node {best\_resunet\_l1\_mse.pth (Epoch 75)} }
+      child { node {best\_pix2pix\_generator.pth (Epoch 80)} }
+      child { node {best\_model3\_cddpm\_scratch.pth (Epoch 80)} }
+      child { node {best\_cddpm\_synthrad\_sota.pth (Epoch 73)} }
+      child { node {best\_ccr\_diffusion\_checkpoint.pth (Epoch 80)} }
+    }
+    child [missing] {}
+    child [missing] {}
+    child [missing] {}
+    child [missing] {}
+    child [missing] {}
+    child { node [folder] {deliverables/}
+      child { node {metrics/ (CSV logs across slices and patients)} }
+      child { node {figures/ (publication-grade residual difference maps)} }
+      child { node {reports/ (comprehensive clinical audit summaries)} }
+    };
+\end{tikzpicture}
+\caption{Modular Codebase Architecture and File Hierarchy}
+\label{fig:codebase_tree}
+\end{figure}
+
+The software architecture separates configuration definitions from computational graphs:
+\begin{itemize}
+    \item \textbf{Configuration Layer (\texttt{configs/}):} Encapsulates all experimental hyperparameters, dataset paths, cohort IDs, and random seeds in structured JSON/YAML files. Modifying experiments requires zero alterations to underlying network class definitions.
+    \item \textbf{Core Model Definitions (\texttt{models/}):} Contains independent, fully encapsulated PyTorch \texttt{nn.Module} declarations~\cite{paszke2019pytorch} for each of the five models, preventing unintended shared state or parameter cross-talk.
+    \item \textbf{Execution Pipelines (\texttt{pipelines/}):} Houses data loading routines, GPU tensor operations, DDIM reverse trajectories, and the comprehensive metric evaluation suite.
+    \item \textbf{Checkpoints and Artifacts (\texttt{checkpoints/}, \texttt{deliverables/}):} Stores serialized model weights, optimizer states, slice-level CSV performance logs, and publication-ready error visualization figures.
+\end{itemize}
+
+\section{Data Ingestion, Preprocessing, and Caching Pipeline}
+
+\subsection{SynthRAD2023 Cohort Stratification and Patient Isolation}
+The benchmark evaluates 60 clinical brain patients ($3,614$ total paired axial 2D slices) from the international SynthRAD2023 challenge (UMC Utrecht cohort)~\cite{thummerer2023synthrad2023,synthrad2023dataset}. To prevent inter-slice data contamination, strict patient-level isolation is enforced under a deterministic random seed ($\text{Seed} = 42$):
+\begin{itemize}
+    \item \textbf{Training Split:} 48 patients ($2,879$ axial slices, $79.7\%$).
+    \item \textbf{Validation Split:} 6 patients ($372$ axial slices, $10.3\%$).
+    \item \textbf{Frozen Held-Out Test Split:} Exactly 6 patients ($363$ axial slices, $10.0\%$), specifically IDs \texttt{1BA054}, \texttt{1BA097}, \texttt{1BA172}, \texttt{1BA234}, \texttt{1BA256}, and \texttt{1BA307}.
+\end{itemize}
+The test set remained completely isolated and untouched during hyperparameter tuning, cross-validation fitting, and checkpoint selection.
+
+\subsection{Zero-Leakage Cranial Mask Generation}
+To ensure that target CT information never leaks into the generative conditioning inputs, anatomical head masks $\mathbf{m} \in \{0, 1\}^{H \times W}$ are computed \textbf{exclusively from the input MRI}:
+\begin{enumerate}
+    \item Gaussian filtering with a kernel size of $(5, 5)$ and $\sigma = 0$ is applied to smooth high-frequency radiofrequency background noise.
+    \item Otsu automated thresholding partitions non-zero cranial tissue from ambient scanner bore air voxels:
+    \begin{equation}
+    \tau^* = \arg\max_\tau \sigma_B^2(\tau) = \arg\max_\tau \left[ \omega_0(\tau) \omega_1(\tau) \left( \mu_0(\tau) - \mu_1(\tau) \right)^2 \right]
+    \label{eq:otsu_threshold}
+    \end{equation}
+    \item Morphological closing using an elliptical structuring element of size $7 \times 7$ bridges skull-air gaps and seals minor temporal bone dips.
+    \item Binary hole-filling extracts the largest connected component, ensuring complete inclusion of cortical bone, soft-tissue cerebrum, and cerebrospinal fluid spaces while zeroing out non-anatomical background voxels.
+\end{enumerate}
+
+\subsection{Physical Hounsfield Unit Calibration}
+Clinical CT values are natively scaled in Hounsfield Units. To prepare CT slices for neural network training while preserving linear electron density relationships, voxel intensities are bounded to the cranial diagnostic window $[-1000\text{ HU}, +1500\text{ HU}]$ ($\text{span} = 2500\text{ HU}$) and normalized to $[-1.0, +1.0]$:
+\begin{equation}
+y_{\text{norm}} = 2 \times \left( \frac{y_{\text{HU}} - (-1000.0)}{1500.0 - (-1000.0)} \right) - 1.0 = 2 \times \left( \frac{y_{\text{HU}} + 1000.0}{2500.0} \right) - 1.0
+\label{eq:hu_norm_implementation}
+\end{equation}
+Under this calibration:
+\begin{itemize}
+    \item Air ($-1000\text{ HU}$) maps to $-1.0$.
+    \item Water / Soft Tissue ($0\text{ HU}$) maps to $-0.20$.
+    \item Dense Cortical Skull Bone Threshold ($+300\text{ HU}$) maps to $+0.0400$.
+    \item Dense Cortical Bone Ceiling ($+1500\text{ HU}$) maps to $+1.0$.
+\end{itemize}
+Predicted synthetic CT tensors $\mathbf{\hat{y}}_{\text{norm}} \in [-1.0, +1.0]$ are deterministically inverted to absolute physical Hounsfield Units during evaluation:
+\begin{equation}
+\hat{y}_{\text{HU}} = \left( \frac{\mathbf{\hat{y}}_{\text{norm}} + 1.0}{2.0} \right) \times 2500.0 - 1000.0
+\label{eq:hu_inversion_implementation}
+\end{equation}
+Background voxels outside the cranial mask ($\mathbf{m} = 0$) are clamped strictly to $-1000.0\text{ HU}$ ($-1.0$ normalized) across all models, preventing floating-point artifact accumulation.
+
+\subsection{Four-Fold Patient-Level Cross-Fitting Pipeline}
+To train the Stage 2 residual diffusion models (Models 4 and 5) without in-sample overfitting, a 4-fold cross-fitting protocol is executed on the 48 training patients ($12$ patients per fold). For each fold $k \in \{1, 2, 3, 4\}$, a Stage 1 ResUNet $G_{\phi_k}$ is trained on the remaining 36 patients and evaluated strictly out-of-fold (OOF) on the 12 held-out patients:
+\begin{equation}
+\mathbf{c}_{\text{OOF}}^{(i)} = G_{\phi_{k(i)}}\left(\mathbf{x}^{(i)}\right), \quad \text{where } \text{patient}(i) \in \text{Fold}_k
+\label{eq:oof_prediction}
+\end{equation}
+The residual diffusion models are trained solely on true out-of-fold residuals:
+\begin{equation}
+\mathbf{r}^{(i)} = \mathbf{y}^{(i)} - \mathbf{c}_{\text{OOF}}^{(i)}, \quad \mathbf{z}_0^{(i)} = \frac{\mathbf{r}^{(i)}}{s}
+\label{eq:residual_scaling}
+\end{equation}
+where $s = \text{std}(\mathbf{r}_{\text{train}}) = 0.160$ is the empirical standard deviation fixed across the training cohort. For test patients, the coarse anchor is synthesized via deterministic ensemble averaging:
+\begin{equation}
+\mathbf{c}_{\text{test}} = \frac{1}{4} \sum_{k=1}^4 G_{\phi_k}(\mathbf{x}_{\text{test}})
+\label{eq:test_ensemble_coarse}
+\end{equation}
+This eliminates training-inference distribution shifts and prevents data leakage.
+
+\section{Training Hyperparameters and Optimization Protocol}
+All five models were trained using PyTorch 2.2.0~\cite{paszke2019pytorch} with CUDA 12.1 acceleration on dedicated NVIDIA GPUs hosted on the Kaggle computing platform~\cite{kaggle2024platform}. Table~\ref{tab:training_hyperparams} provides the comprehensive hyperparameter configurations across all architectures.
+
+To guarantee fair empirical comparisons and reproducible gradient dynamics, uniform input dimensions ($256 \times 256$) and mini-batch sizes ($8$ slices) were strictly enforced across all five experimental pipelines. The AdamW optimizer was chosen for its decoupled weight decay regularization ($\lambda_{\text{reg}} = 1.0 \times 10^{-4}$), effectively curbing parameter overfitting across deep bottleneck convolutions. A cosine annealing learning rate schedule was deployed across all architectures, smoothly decaying the initial base learning rate from $\eta_0 = 2.0 \times 10^{-4}$ (for feedforward regressors) and $\eta_0 = 1.0 \times 10^{-4}$ (for diffusion backbones) down to $\eta_{\min} = 1.0 \times 10^{-6}$ to facilitate smooth asymptotic convergence without discrete step disruptions. Numerical stability was reinforced through Automatic Mixed Precision (AMP FP16) acceleration coupled with strict global gradient clipping ($\|\mathbf{g}\|_2 \le 1.0$), precluding gradient explosions during reverse diffusion updates. Furthermore, while diffusion models were trained across $T = 1000$ discrete noise steps using a linear variance schedule ($\beta_1 = 10^{-4}, \beta_T = 0.02$), clinical inference was executed using a deterministic 50-step DDIM sampler ($\eta = 0$) to ensure high-throughput translation. For the proposed CCR-Diffusion model, a phased schedule was implemented comprising 40 epochs of Stage-1 coarse anatomical pre-training followed by 80 epochs of Stage-2 residual FiLM denoiser optimization based on minimum validation loss checkpoints.
+
+\begin{table}[!htbp]
+\centering
+\caption{Systematic Training Hyperparameter Configuration Across All Five Models}
+\label{tab:training_hyperparams}
+\small
+\renewcommand{\arraystretch}{1.2}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{} l p{3.5cm} p{3.2cm} p{3.8cm} @{}}
+\toprule
+\textbf{Hyperparameter} & \textbf{Models 1 \& 2 (ResUNet / Pix2Pix)} & \textbf{Model 3 (cDDPM Scratch)} & \textbf{Models 4 \& 5 (Residual / CCR-Diff)} \\
+\midrule
+Optimizer & Adam / AdamW & AdamW & AdamW \\
+Base Learning Rate ($\eta_0$) & $2.0 \times 10^{-4}$ & $1.0 \times 10^{-4}$ & $1.0 \times 10^{-4}$ \\
+Minimum LR ($\eta_{\min}$) & $1.0 \times 10^{-6}$ & $1.0 \times 10^{-6}$ & $1.0 \times 10^{-6}$ \\
+LR Scheduler & Cosine Annealing & Cosine Annealing & Cosine Annealing \\
+Weight Decay ($\lambda_{\text{reg}}$) & $1.0 \times 10^{-4}$ & $1.0 \times 10^{-4}$ & $1.0 \times 10^{-4}$ \\
+Betas $(\beta_1, \beta_2)$ & $(0.5, 0.999)$ [GAN] / $(0.9, 0.999)$ & $(0.9, 0.999)$ & $(0.9, 0.999)$ \\
+Batch Size & 8 slices & 8 slices & 8 slices \\
+Training Epochs & 75 (ResUNet) / 80 (Pix2Pix) & 80 epochs & 40 (Stage 1) + 80 (Stage 2) \\
+Mixed Precision & FP16 (AMP) & FP16 (AMP) & FP16 (AMP) \\
+Gradient Clipping & $\|\mathbf{g}\|_2 \le 1.0$ & $\|\mathbf{g}\|_2 \le 1.0$ & $\|\mathbf{g}\|_2 \le 1.0$ \\
+Diffusion Steps ($T$) & N/A & 1,000 steps & 1,000 steps \\
+Variance Schedule & N/A & Linear ($\beta_1=10^{-4}, \beta_T=0.02$) & Linear ($\beta_1=10^{-4}, \beta_T=0.02$) \\
+Inference Sampler & Feedforward ($1$ pass) & DDIM ($50$ steps, $\eta=0$) & DDIM ($50$ steps, $\eta=0$) \\
+Selection Metric & Min Val Composite Score & Min Val Noise MSE & Min Val Composite Score \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\section{Loss Function Formulations and Computational Implementations}
+
+\subsection{Model 1: Composite $L_1$ and Mean Squared Error Loss}
+The supervised ResUNet baseline is optimized using an intracranial masked composite objective:
+\begin{equation}
+\mathcal{L}_{\text{M1}}(\theta) = \frac{\sum_{i \in \Omega} m_i \cdot |\hat{y}_i - y_i|}{\sum_{i \in \Omega} m_i} + 0.10 \times \frac{\sum_{i \in \Omega} m_i \cdot (\hat{y}_i - y_i)^2}{\sum_{i \in \Omega} m_i}
+\label{eq:impl_m1_loss}
+\end{equation}
+where $m_i \in \{0, 1\}$ denotes the binary cranial mask. Masked weighting focuses 100\% of gradient backpropagation onto brain parenchymal and cranial bone voxels while ignoring trivial background zero-regions. This selective anatomical gating prevents the model from wasting representational capacity on exterior air voxels, which otherwise constitute over 50\% of the field-of-view and artificially suppress unweighted loss metrics. Furthermore, coupling the outlier-robust linear $L_1$ penalty with a quadratic $L_2$ regularization term suppresses severe radiometric prediction spikes while preserving steep intensity gradients across the inner and outer cranial cortex.
+
+\subsection{Model 2: Conditional PatchGAN Minimax Loss}
+Pix2Pix employs a two-player game between a U-Net Generator $G$ and a $70 \times 70$ PatchGAN Discriminator $D$. The Least Squares GAN (LSGAN) formulation is adopted to stabilize training and mitigate vanishing gradients:
+\begin{align}
+\mathcal{L}_D &= \frac{1}{2} \mathbb{E}_{\mathbf{x}, \mathbf{y}}\left[ (D(\mathbf{x}, \mathbf{y}) - 1)^2 \right] + \frac{1}{2} \mathbb{E}_{\mathbf{x}}\left[ (D(\mathbf{x}, G(\mathbf{x})) - 0)^2 \right] \label{eq:impl_d_loss} \\
+\mathcal{L}_G &= \frac{1}{2} \mathbb{E}_{\mathbf{x}}\left[ (D(\mathbf{x}, G(\mathbf{x})) - 1)^2 \right] + \lambda_{\text{rec}} \cdot \frac{\sum_{i} m_i \cdot |G(\mathbf{x})_i - y_i|}{\sum_i m_i} \label{eq:impl_g_loss}
+\end{align}
+where $\lambda_{\text{rec}} = 100.0$ anchors adversarial texture synthesis to physical geometry.
+
+\subsection{Model 3: Direct Conditional Denoising Diffusion Loss}
+Model 3 optimizes the expectation over random Gaussian noise $\boldsymbol{\epsilon} \sim \mathcal{N}(\mathbf{0}, \mathbf{I})$ and uniformly sampled timesteps $t \sim \mathcal{U}(1, T)$:
+\begin{equation}
+\mathcal{L}_{\text{cDDPM}}(\theta) = \mathbb{E}_{t, \mathbf{y}_0, \boldsymbol{\epsilon}, \mathbf{x}, \mathbf{m}} \left[ \left\| \boldsymbol{\epsilon} - \boldsymbol{\epsilon}_\theta\left( \sqrt{\bar{\alpha}_t} \mathbf{y}_0 + \sqrt{1 - \bar{\alpha}_t} \boldsymbol{\epsilon}, \; t, \; \mathbf{x}, \; \mathbf{m} \right) \right\|_2^2 \right]
+\label{eq:impl_m3_loss}
+\end{equation}
+The denoiser directly outputs predicted noise $\hat{\boldsymbol{\epsilon}} \in \mathbb{R}^{1 \times H \times W}$ across the entire image grid.
+
+\subsection{Model 4: SOTA Bone-Weighted and Structural Hybrid Loss}
+Model 4 couples the diffusion noise objective with dedicated bone penalization and perceptual similarity:
+\begin{equation}
+\mathcal{L}_{\text{M4}} = \|\boldsymbol{\epsilon} - \hat{\boldsymbol{\epsilon}}\|_2^2 + \lambda_{\text{bone}} \frac{\sum_i w_{\text{bone}, i} \cdot |\hat{y}_{0, i} - y_{0, i}|}{\sum_i w_{\text{bone}, i}} + \lambda_{\text{ssim}} (1.0 - \text{SSIM}(\mathbf{\hat{y}}_0, \mathbf{y}_0))
+\label{eq:impl_m4_loss}
+\end{equation}
+where $\lambda_{\text{bone}} = 2.0$, $\lambda_{\text{ssim}} = 0.50$, and the bone weighting tensor is defined dynamically as:
+\begin{equation}
+w_{\text{bone}, i} = 1.0 + 4.0 \times \mathbb{I}\left( y_{\text{norm}, i} \ge +0.0400 \right)
+\label{eq:bone_weight_def}
+\end{equation}
+The clean reconstruction estimate $\mathbf{\hat{y}}_0$ is computed analytically at each training step using Tweedie's formula:
+\begin{equation}
+\mathbf{\hat{y}}_0 = \frac{\mathbf{y}_t - \sqrt{1 - \bar{\alpha}_t}\hat{\boldsymbol{\epsilon}}}{\sqrt{\bar{\alpha}_t}}
+\label{eq:tweedie_y0}
+\end{equation}
+
+\subsection{Model 5: Proposed CCR-Diffusion FiLM-Modulated Residual Loss}
+CCR-Diffusion denoises the standardized residual $\mathbf{z}_0 = (\mathbf{y} - \mathbf{c}_{\text{OOF}}) / s$. The loss formulation features an auxiliary masked SSIM regularization active only during early refinement steps ($t \le 250$):
+\begin{equation}
+\mathcal{L}_{\text{CCR}} = \mathbb{E}_{t, \mathbf{z}_0, \boldsymbol{\epsilon}} \left[ \|\boldsymbol{\epsilon} - \boldsymbol{\epsilon}_\theta(\mathbf{z}_t, t, \mathbf{F}_{\text{enc}})\|_2^2 + \mathbb{I}(t \le 250) \cdot \lambda_{\text{aux}} (1.0 - \text{SSIM}_{\text{mask}}(\mathbf{\hat{z}}_0, \mathbf{z}_0)) \right]
+\label{eq:impl_m5_loss}
+\end{equation}
+where $\lambda_{\text{aux}} = 0.10$ and $\mathbf{F}_{\text{enc}}$ are multi-scale feature embeddings extracted from the frozen Stage 1 ResUNet encoder.
+
+\section{50-Step Deterministic DDIM Reverse Sampling Engine}
+Standard DDPM ancestral sampling requires $T = 1,000$ sequential network evaluations per slice, resulting in impractical inference latencies ($> 10\text{ seconds}$ per 2D slice). To enable clinical real-time viability, we implement the non-Markovian Denoising Diffusion Implicit Model (DDIM) formulation~\cite{song2021denoising}.
+
+Let $\{\tau_1, \tau_2, \dots, \tau_S\}$ be a sub-sequence of $S = 50$ evenly spaced sampling steps selected from $\{1, \dots, 1000\}$:
+\begin{equation}
+\tau_i = \left\lfloor \frac{i-1}{S-1} \times (T - 1) \right\rfloor + 1, \quad i \in \{1, 2, \dots, S\}
+\label{eq:tau_subsequence}
+\end{equation}
+Setting the stochastic noise parameter $\eta = 0$ yields a purely deterministic ODE trajectory. The complete algorithmic execution of the 50-step DDIM reverse sampler for CCR-Diffusion is formalized in Algorithm~\ref{alg:ddim_ccr}.
+
+\begin{algorithm}[htbp]
+\caption{50-Step Deterministic DDIM Reverse Sampling for CCR-Diffusion}
+\label{alg:ddim_ccr}
+\begin{algorithmic}[1]
+\REQUIRE Condition MRI slice $\mathbf{x} \in [-1, 1]^{1 \times H \times W}$, Cranial mask $\mathbf{m} \in \{0, 1\}^{1 \times H \times W}$
+\REQUIRE Stage 1 Anchor Network $G_\phi$, Diffusion Denoiser $\boldsymbol{\epsilon}_\theta$, Precomputed cumulative alphas $\{\bar{\alpha}_t\}_{t=1}^T$
+\REQUIRE Sub-sequence $\{\tau_S, \tau_{S-1}, \dots, \tau_1\}$ with $S = 50$, Residual standard deviation $s = 0.160$
+\ENSURE Calibrated Synthetic CT slice $\mathbf{\hat{y}}_{\text{HU}} \in [-1000, 1500]\text{ HU}$
+\STATE \textbf{Stage 1: Coarse Anatomical Estimation and Feature Extraction}
+\STATE $\mathbf{c} \leftarrow G_\phi(\mathbf{x})$ \COMMENT{Deterministic feedforward coarse CT estimate}
+\STATE $\mathbf{F}_{\text{enc}} \leftarrow G_\phi.\text{extract\_encoder\_features}(\mathbf{x})$ \COMMENT{Multi-scale conditioning priors}
+\STATE \textbf{Stage 2: Deterministic Reverse Residual Diffusion}
+\STATE Sample initial standardized white noise $\mathbf{z}_{\tau_S} \sim \mathcal{N}(\mathbf{0}, \mathbf{I})$
+\FOR{$i = S \text{ down to } 1$}
+    \STATE $t \leftarrow \tau_i$
+    \STATE $t_{\text{prev}} \leftarrow \tau_{i-1}$ \textbf{if} $i > 1$ \textbf{else} $0$
+    \STATE $\hat{\boldsymbol{\epsilon}} \leftarrow \boldsymbol{\epsilon}_\theta\left( [\mathbf{z}_t \mathbin{\Vert} \mathbf{m}], \; t, \; \mathbf{F}_{\text{enc}} \right)$ \COMMENT{FiLM-modulated noise estimation}
+    \STATE $\hat{\mathbf{z}}_0 \leftarrow \text{clip}\left( \frac{\mathbf{z}_t - \sqrt{1 - \bar{\alpha}_t}\hat{\boldsymbol{\epsilon}}}{\sqrt{\bar{\alpha}_t} + 10^{-8}}, \; -6.0, \; +6.0 \right)$ \COMMENT{Estimated clean residual}
+    \STATE $\hat{\boldsymbol{\epsilon}}_{\text{adj}} \leftarrow \frac{\mathbf{z}_t - \sqrt{\bar{\alpha}_t} \hat{\mathbf{z}}_0}{\sqrt{1 - \bar{\alpha}_t} + 10^{-8}}$ \COMMENT{Adjusted noise vector}
+    \STATE $\mathbf{d}_t \leftarrow \sqrt{1 - \bar{\alpha}_{t_{\text{prev}}}} \cdot \hat{\boldsymbol{\epsilon}}_{\text{adj}}$ \COMMENT{Direction pointing to $\mathbf{z}_{t_{\text{prev}}}$}
+    \STATE $\mathbf{z}_{t_{\text{prev}}} \leftarrow \sqrt{\bar{\alpha}_{t_{\text{prev}}}} \cdot \hat{\mathbf{z}}_0 + \mathbf{d}_t$ \COMMENT{Deterministic DDIM update step}
+\ENDFOR
+\STATE \textbf{Stage 3: Physical Reconstruction and Cranial Clamping}
+\STATE $\mathbf{\hat{r}} \leftarrow \mathbf{z}_0 \times s$ \COMMENT{Invert standardized residual scaling}
+\STATE $\mathbf{\hat{y}}_{\text{norm}} \leftarrow \text{clip}\left( \mathbf{c} + \mathbf{\hat{r}}, \; -1.0, \; +1.0 \right)$ \COMMENT{Coarse-residual spatial recombination}
+\STATE $\mathbf{\hat{y}}_{\text{norm}} \leftarrow \mathbf{\hat{y}}_{\text{norm}} \odot \mathbf{m} + (-1.0) \odot (1 - \mathbf{m})$ \COMMENT{Enforce mask background consistency}
+\STATE $\mathbf{\hat{y}}_{\text{HU}} \leftarrow \left( \frac{\mathbf{\hat{y}}_{\text{norm}} + 1.0}{2.0} \right) \times 2500.0 - 1000.0$ \COMMENT{Revert to physical Hounsfield Units}
+\RETURN $\mathbf{\hat{y}}_{\text{HU}}$
+\end{algorithmic}
+\end{algorithm}
+
+As formalized in Algorithm~\ref{alg:ddim_ccr}, the DDIM reverse process for CCR-Diffusion avoids stochastic Brownian motion drift ($\eta = 0$) and ensures that the final synthetic CT output is deterministic, reproducible, and strictly anchored by the Stage 1 coarse anatomical prior $\mathbf{c}$.

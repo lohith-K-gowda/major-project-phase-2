@@ -1,0 +1,882 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Deep Learning-Based MRI-TO-CT Image Translation Using Generative Models - VTU Project Report</title>
+<!-- Google Fonts: Times New Roman Equivalent (Tinos) and Sans-Serif (Inter) -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Tinos:ital,wght@0,400;0,700;1,400;1,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<!-- MathJax for rendering LaTeX mathematical equations -->
+<script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+<style>
+  :root {
+    --rule-color: #843C0C; /* VTU Brown Double-Rule */
+    --navy-blue: #1B365D;
+    --page-width: 210mm;
+    --page-height: 297mm;
+    --margin-left: 31.75mm; /* 1.25 in binding */
+    --margin-right: 25.4mm; /* 1.0 in */
+    --margin-top: 25.4mm;   /* 1.0 in */
+    --margin-bottom: 25.4mm;/* 1.0 in */
+  }
+
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    background-color: #2b2b2b;
+    font-family: 'Tinos', 'Times New Roman', serif;
+    font-size: 12pt;
+    line-height: 1.5;
+    color: #111;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px 0;
+  }
+
+  /* Control bar */
+  .toolbar {
+    position: sticky;
+    top: 10px;
+    z-index: 1000;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    border: 1px solid #ccc;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    border-radius: 30px;
+    padding: 8px 24px;
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    margin-bottom: 20px;
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+  }
+  .toolbar button {
+    background: #843C0C;
+    color: white;
+    border: none;
+    padding: 8px 18px;
+    border-radius: 20px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .toolbar button:hover {
+    background: #622a07;
+    transform: translateY(-1px);
+  }
+
+  /* Simulated A4 Paper Sheets */
+  .page {
+    width: var(--page-width);
+    min-height: var(--page-height);
+    background: #ffffff;
+    box-shadow: 0 5px 25px rgba(0, 0, 0, 0.4);
+    margin-bottom: 25px;
+    padding: 18mm 25.4mm 20mm 31.75mm;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    position: relative;
+  }
+
+  /* Header Double Line */
+  .page-header {
+    width: 100%;
+    margin-bottom: 12pt;
+  }
+  .page-header .header-text {
+    font-family: 'Tinos', serif;
+    font-size: 10.5pt;
+    font-weight: bold;
+    color: #111;
+    margin-bottom: 4px;
+    letter-spacing: -0.2px;
+  }
+  .double-rule-top {
+    border-top: 2.5pt solid var(--rule-color);
+    border-bottom: 0.6pt solid var(--rule-color);
+    height: 4.6pt; /* 2.5pt + 1.5pt gap + 0.6pt */
+    width: 100%;
+  }
+
+  /* Footer Double Line */
+  .page-footer {
+    width: 100%;
+    margin-top: 14pt;
+  }
+  .double-rule-bottom {
+    border-top: 0.6pt solid var(--rule-color);
+    border-bottom: 2.5pt solid var(--rule-color);
+    height: 4.6pt;
+    width: 100%;
+    margin-bottom: 6px;
+  }
+  .footer-content {
+    display: flex;
+    justify-content: space-between;
+    font-family: 'Inter', sans-serif;
+    font-size: 9.5pt;
+    color: #333;
+  }
+  .footer-content span:nth-child(1) { text-align: left; flex: 1.2; }
+  .footer-content span:nth-child(2) { text-align: center; flex: 0.8; }
+  .footer-content span:nth-child(3) { text-align: right; flex: 0.8; }
+
+  /* Page Content */
+  .page-body {
+    flex-grow: 1;
+  }
+
+  h1.chap-label {
+    font-size: 16pt;
+    font-weight: bold;
+    text-align: left;
+    margin-top: 0;
+    margin-bottom: 4pt;
+  }
+  h1.chap-title {
+    font-size: 18pt;
+    font-weight: bold;
+    text-align: center;
+    text-transform: uppercase;
+    margin-bottom: 16pt;
+  }
+  h2.sec-heading {
+    font-size: 14pt;
+    font-weight: bold;
+    margin-top: 12pt;
+    margin-bottom: 4pt;
+    color: #000;
+  }
+  h3.subsec-heading {
+    font-size: 12.5pt;
+    font-weight: bold;
+    margin-top: 8pt;
+    margin-bottom: 3pt;
+    color: #111;
+  }
+  p {
+    margin-bottom: 7pt;
+    text-align: justify;
+    text-justify: inter-word;
+  }
+  ul, ol {
+    margin-left: 20px;
+    margin-bottom: 7pt;
+  }
+  li {
+    margin-bottom: 3pt;
+    text-align: justify;
+  }
+
+  .math-block {
+    margin: 8pt 0;
+    text-align: center;
+    overflow-x: auto;
+  }
+
+  /* Table styling */
+  table.report-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 6pt 0 10pt 0;
+    font-size: 8.5pt;
+    line-height: 1.3;
+  }
+  table.report-table th, table.report-table td {
+    border-top: 1px solid #bbb;
+    border-bottom: 1px solid #bbb;
+    padding: 4px 5px;
+    text-align: left;
+    vertical-align: top;
+  }
+  table.report-table th {
+    border-top: 2px solid #222;
+    border-bottom: 1.5px solid #222;
+    background-color: #f8f9fa;
+    font-weight: bold;
+    color: #111;
+  }
+  table.report-table tr:last-child td {
+    border-bottom: 2px solid #222;
+  }
+
+  .dfd-box {
+    background-color: #fdfdfd;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    padding: 10px;
+    margin: 8pt 0;
+    text-align: center;
+    font-family: 'Inter', sans-serif;
+    font-size: 9.5pt;
+  }
+
+  /* Print Media Styles */
+  @media print {
+    body {
+      background: none;
+      padding: 0;
+    }
+    .toolbar {
+      display: none;
+    }
+    .page {
+      box-shadow: none;
+      margin: 0;
+      page-break-after: always;
+      width: 100%;
+      height: 100%;
+      min-height: 297mm;
+      padding: 18mm 25.4mm 20mm 31.75mm;
+    }
+    @page {
+      size: A4 portrait;
+      margin: 0;
+    }
+  }
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <span><strong>VTU 22-Scheme Report Live Preview (Complete Chapters 1 to 6)</strong></span>
+  <span>|</span>
+  <button onclick="window.print()">🖨️ Export to PDF / Print</button>
+</div>
+
+<!-- ============================================================ -->
+<!-- PAGE 1: TITLE PAGE -->
+<!-- ============================================================ -->
+<div class="page" style="justify-content: space-between; text-align: center; padding-top: 25mm;">
+  <div>
+    <div style="font-size: 16pt; font-weight: bold;">VISVESVARAYA TECHNOLOGICAL UNIVERSITY</div>
+    <div style="font-size: 13pt; font-weight: bold; margin-top: 4px;">“Jnana Sangama”, Belagavi – 590018, Karnataka</div>
+    <div style="margin: 15px 0;">
+      <img src="vtu_logo.png" alt="VTU Logo" style="width: 85px;">
+    </div>
+    <div style="font-size: 12pt; font-weight: bold; margin-bottom: 6px;">A MAJOR PROJECT REPORT ON</div>
+    <div style="font-size: 15pt; font-weight: bold; color: var(--navy-blue); line-height: 1.3; margin-bottom: 8px;">
+      DEEP LEARNING-BASED MRI-TO-CT IMAGE TRANSLATION USING GENERATIVE MODELS
+    </div>
+    <div style="font-size: 11.5pt; font-style: italic; font-weight: bold; margin-bottom: 18px;">
+      A Rigorous Five-Model Benchmark and Anatomical Invariant Residual Diffusion Framework for MRI-Only Radiotherapy Planning on SynthRAD2023
+    </div>
+    <div style="font-size: 11pt; font-style: italic;">Submitted in partial fulfillment of the requirements for the award of the degree of</div>
+    <div style="font-size: 13pt; font-weight: bold; margin-top: 2px;">BACHELOR OF ENGINEERING</div>
+    <div style="font-size: 11pt; font-style: italic;">in</div>
+    <div style="font-size: 13pt; font-weight: bold;">COMPUTER SCIENCE AND ENGINEERING</div>
+  </div>
+
+  <div style="display: flex; justify-content: space-between; text-align: left; margin: 20px 0; font-size: 11pt;">
+    <div style="width: 48%;">
+      <div style="font-weight: bold; text-decoration: underline; margin-bottom: 4px;">Submitted by:</div>
+      <div><strong>Lohith K</strong> <span style="float: right;">(1JT22CS000)</span></div>
+      <div><strong>Student 2</strong> <span style="float: right;">(1JT22CS000)</span></div>
+      <div><strong>Student 3</strong> <span style="float: right;">(1JT22CS000)</span></div>
+      <div><strong>Student 4</strong> <span style="float: right;">(1JT22CS000)</span></div>
+    </div>
+    <div style="width: 48%;">
+      <div style="font-weight: bold; text-decoration: underline; margin-bottom: 4px;">Under the Guidance of:</div>
+      <div><strong>Dr. Faculty Guide</strong>, M.Tech., Ph.D.</div>
+      <div>Associate Professor</div>
+      <div>Dept. of Computer Science & Engg.</div>
+      <div>Jyothy Institute of Technology</div>
+    </div>
+  </div>
+
+  <div>
+    <div style="margin-bottom: 6px;"><img src="vtu_logo.png" alt="VTU Logo" style="width: 70px;"></div>
+    <div style="font-size: 13pt; font-weight: bold;">DEPARTMENT OF COMPUTER SCIENCE AND ENGINEERING</div>
+    <div style="font-size: 15pt; font-weight: bold; color: var(--rule-color);">JYOTHY INSTITUTE OF TECHNOLOGY</div>
+    <div style="font-size: 10pt;">(Affiliated to Visvesvaraya Technological University, Belagavi, Approved by AICTE, New Delhi)</div>
+    <div style="font-size: 10.5pt;">Tataguni, Kanakapura Road, Bengaluru – 560082</div>
+    <div style="font-size: 11.5pt; font-weight: bold; margin-top: 4px;">Academic Year: 2026 – 2027</div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- PAGE 2: ABSTRACT -->
+<!-- ============================================================ -->
+<div class="page">
+  <div class="page-header">
+    <div class="header-text">Deep Learning-Based MRI-TO-CT Image Translation Using Generative Models</div>
+    <div class="double-rule-top"></div>
+  </div>
+
+  <div class="page-body">
+    <h1 style="text-align: center; font-size: 16pt; font-weight: bold; text-decoration: underline; margin-bottom: 16pt;">ABSTRACT</h1>
+    <p style="text-align: justify; line-height: 1.5; font-size: 12pt; text-indent: 0.5in;">
+      Magnetic Resonance Imaging (MRI)-guided radiation therapy offers unparalleled soft-tissue contrast for cranial target volume delineation and organ-at-risk (OAR) preservation without exposing oncology patients to ionizing radiation; however, MRI voxel intensities reflect proton relaxation physics (T<sub>1</sub>, T<sub>2</sub>, T<sub>2</sub><sup>*</sup>) rather than physical electron densities or Hounsfield Units (HU) indispensable for photon attenuation correction and Monte Carlo dose calculation. Consequently, current clinical practice enforces dual-modality MRI and Computed Tomography (CT) acquisition, which introduces inter-modality rigid and deformable registration errors (1–5 mm), anatomical organ deformation, cumulative radiation burden, and elevated healthcare costs. To eliminate dual-modality dependencies and facilitate an end-to-end, single-modality MRI-only radiotherapy workflow, this project conducts a comprehensive comparative benchmark and introduces an architectural advancement for high-fidelity synthetic CT (sCT) synthesis. Formulated on the standardized SynthRAD2023 Grand Challenge Task 1 (Brain) cohort, five distinct deep learning and generative model paradigms are systematically evaluated under strictly identical patient-level data partitions (Seed 42, 80%/20% split across 363 total volumes and 363 frozen held-out test slices from 6 patients): a supervised baseline ResUNet with multi-scale residual blocks, an adversarial image-to-image translation network (Pix2Pix cGAN), an unconstrained Conditional Denoising Diffusion Probabilistic Model trained from scratch (cDDPM), a state-of-the-art residual diffusion model with self-attention gating (SOTA-CDDPM), and a novel Cross-Conditioned Residual Diffusion Network (CCR-Diffusion) incorporating multi-scale Feature-wise Linear Modulation (FiLM) and structural spatial priors. Extensive quantitative evaluation across the held-out test cohort demonstrates that the proposed CCR-Diffusion framework achieves state-of-the-art anatomical fidelity with a Masked Structural Similarity Index Measure (SSIM) of 0.8864 ± 0.0251 and Global SSIM of 0.9405 ± 0.0102, substantially outperforming unconstrained diffusion (0.7473) and paired adversarial synthesis (0.8245), while simultaneously achieving superior radiometric precision with a Masked Mean Absolute Error (MAE) of 0.0391 ± 0.0082 and Root Mean Square Error (RMSE) of 0.0982 ± 0.0088. By effectively mitigating the Gaussian stochastic drift and skull boundary blurring characteristic of standard diffusion architectures, CCR-Diffusion successfully resolves high-density cortical bone margins (HU &gt; 300) and fine cerebrovascular interfaces, confirming its diagnostic fidelity and establishing an accurate, clinically viable computational framework for MRI-guided radiation therapy treatment planning.
+    </p>
+    <p style="margin-top: 18pt; font-size: 11pt; line-height: 1.4;">
+      <strong>Keywords:</strong> Synthetic CT (sCT), MRI-Only Radiotherapy, Generative Diffusion Models, CCR-Diffusion, SynthRAD2023, Denoising Diffusion Probabilistic Models (DDPM), Pix2Pix cGAN, ResUNet, Radiation Dosimetry.
+    </p>
+  </div>
+
+  <div class="page-footer">
+    <div class="double-rule-bottom"></div>
+    <div class="footer-content">
+      <span>Dept of CSE, JIT, Bengaluru</span>
+      <span>2026–2027</span>
+      <span>Page v</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- PAGE 3: CHAPTER 1 - INTRODUCTION -->
+<!-- ============================================================ -->
+<div class="page">
+  <div class="page-header">
+    <div class="header-text">Deep Learning-Based MRI-TO-CT Image Translation Using Generative Models</div>
+    <div class="double-rule-top"></div>
+  </div>
+
+  <div class="page-body">
+    <h1 class="chap-label">Chapter-1</h1>
+    <h1 class="chap-title">INTRODUCTION</h1>
+
+    <h2 class="sec-heading">1.1 Project Background</h2>
+    <p>
+      Modern external beam radiotherapy (EBRT) relies fundamentally on accurate patient anatomical representations to deliver lethal ionizing radiation doses to target neoplastic lesions while strictly sparing adjacent critical organs-at-risk (OARs). In contemporary clinical oncology, Computed Tomography (CT) serves as the indispensable cornerstone for treatment simulation, anatomical contouring, and radiation dose calculation. The diagnostic values in CT images are natively calibrated in Hounsfield Units (HU), which maintain a direct, monotonic mathematical relationship with physical tissue electron densities ($\rho_e$) and photon linear attenuation coefficients ($\mu$):
+    </p>
+    <div class="math-block">
+      $$\text{HU} = 1000 \times \left( \frac{\mu_{\text{tissue}} - \mu_{\text{water}}}{\mu_{\text{water}}} \right)$$
+    </div>
+    <p>
+      Because high-energy photon and proton beams interact with human tissue predominantly through Compton scattering and secondary ionization processes, commercial Radiation Treatment Planning Systems (TPS) mandate CT-derived electron density calibration curves to execute Monte Carlo or collapsed-cone convolution dose calculations.
+    </p>
+    <p>
+      Concurrently, Magnetic Resonance Imaging (MRI) has emerged as an indispensable supplementary diagnostic modality in neuro-oncology. By interrogating the nuclear magnetic resonance properties of hydrogen protons under static and radiofrequency magnetic fields, MRI generates exceptional soft-tissue contrast and superior spatial demarcation of intracranial neoplasms, cerebrospinal fluid (CSF) interfaces, and cranial nerve structures that remain indistinct or radiologically isodense on non-contrast CT.
+    </p>
+    <p>
+      However, MRI signal intensity reflects nuclear spin-lattice ($T_1$) and spin-spin ($T_2, T_2^*$) relaxation dynamics, proton density, and local magnetic susceptibility gradients rather than physical electron density. Consequently, standard MRI scans lack electron density information and cannot be ingested directly by TPS algorithms for dose deposition modeling.
+    </p>
+
+    <h2 class="sec-heading">1.2 Clinical Need for Synthetic CT (sCT)</h2>
+    <p>
+      Because neither imaging modality alone satisfies both soft-tissue delineation and dose calculation prerequisites, current standard-of-care clinical radiotherapy enforces a dual-modality workflow. Patients undergo both a planning CT and an MRI scan, followed by multi-modal image coregistration. Despite its widespread clinical adoption, this dual-modality paradigm incurs three severe drawbacks:
+    </p>
+    <ol>
+      <li><strong>Systematic Coregistration Errors:</strong> Inter-modality image registration between separate CT and MRI scanners inevitably incurs spatial alignment uncertainties ranging from $1.5\text{ mm}$ to over $5.0\text{ mm}$. In precision stereotactic radiosurgery (SRS), this can cause critical geometric misses of gross tumor volumes or unacceptable overdose to the brainstem.</li>
+      <li><strong>Cumulative Ionizing Radiation Exposure:</strong> Diagnostic and planning CT scans expose cancer patients to secondary ionizing radiation doses ($2\text{ to }4\text{ mSv}$ per cranial CT examination), increasing secondary cancer risks.</li>
+      <li><strong>Elevated Healthcare Costs and Clinical Overhead:</strong> Acquiring and quality-assuring two independent scanning sessions substantially inflates expenditures and delays the crucial time interval between cancer diagnosis and radiation treatment delivery.</li>
+    </ol>
+  </div>
+
+  <div class="page-footer">
+    <div class="double-rule-bottom"></div>
+    <div class="footer-content">
+      <span>Dept of CSE, JIT, Bengaluru</span>
+      <span>2026–2027</span>
+      <span>Page 1</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- PAGE 4: CHAPTER 2 - LITERATURE SURVEY (35 PAPERS MATRIX) -->
+<!-- ============================================================ -->
+<div class="page">
+  <div class="page-header">
+    <div class="header-text">Deep Learning-Based MRI-TO-CT Image Translation Using Generative Models</div>
+    <div class="double-rule-top"></div>
+  </div>
+
+  <div class="page-body">
+    <h1 class="chap-label">Chapter-2</h1>
+    <h1 class="chap-title">LITERATURE SURVEY</h1>
+
+    <h2 class="sec-heading">2.1 Introduction to the Domain Literature</h2>
+    <p>
+      The goal of MRI-to-CT translation has spurred intensive multidisciplinary research spanning medical physics, clinical radiology, and generative machine learning over the past two decades. Methodologies developed fall into five successive evolutionary generations: (1) Classical Bulk Assignment & Multi-Atlas DIR; (2) Deep Convolutional Regression Networks (U-Net, ResUNet); (3) Generative Adversarial Networks (Pix2Pix, CycleGAN); (4) Denoising Diffusion Probabilistic Models (DDPM, DDIM); and (5) Hybrid, Residual & Feature-Modulated Diffusion Architectures.
+    </p>
+
+    <h2 class="sec-heading">2.7 Comprehensive Literature Survey Summary Matrix (35 Landmark Studies)</h2>
+    <div style="font-weight: bold; font-size: 9.5pt; margin-top: 2pt;">Table 2.1: Classical Bulk Assignment & Multi-Atlas DIR Methods (Sl. 1–6)</div>
+    <table class="report-table">
+      <thead>
+        <tr>
+          <th style="width: 5%;">Sl.</th>
+          <th style="width: 22%;">Author & Year</th>
+          <th style="width: 22%;">Architecture</th>
+          <th style="width: 18%;">Dataset</th>
+          <th style="width: 33%;">Critical Research Gaps</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>1</td><td>Kapanen & Tenhunen (2013)</td><td>Dual-echo bulk HU override</td><td>Cranial $T_1/T_2^*$</td><td>Assumes bone homogeneity; large step errors at cranial boundaries.</td></tr>
+        <tr><td>2</td><td>Sjölund et al. (2015)</td><td>Multi-Atlas non-rigid DIR</td><td>Cranial $T_1$</td><td>High runtime ($30\text{--}60$ min); cannot adapt to craniotomies or tumors.</td></tr>
+        <tr><td>3</td><td>Gudur et al. (2014)</td><td>Atlas deformable registration</td><td>Head & Neck</td><td>Sensitive to non-rigid swallowing artifacts and atlas template bias.</td></tr>
+        <tr><td>4</td><td>Korhonen et al. (2014)</td><td>Dual-model bulk segmentation</td><td>Brain (20 pts)</td><td>Ignores micro-trabecular bone structures and diploic space variation.</td></tr>
+        <tr><td>5</td><td>Burgos et al. (2014)</td><td>Multi-atlas patch fusion</td><td>Brain PET/MR</td><td>High computational overhead; fails under severe pathological shift.</td></tr>
+        <tr><td>6</td><td>Dowling et al. (2015)</td><td>Atlas-based regression</td><td>Pelvis (40 pts)</td><td>Prone to registration failure caused by irregular gas bowel pockets.</td></tr>
+      </tbody>
+    </table>
+
+    <div style="font-weight: bold; font-size: 9.5pt; margin-top: 4pt;">Table 2.2: Deep Convolutional Neural Networks & Regression Baselines (Sl. 7–13)</div>
+    <table class="report-table">
+      <thead>
+        <tr>
+          <th style="width: 5%;">Sl.</th>
+          <th style="width: 22%;">Author & Year</th>
+          <th style="width: 22%;">Architecture</th>
+          <th style="width: 18%;">Dataset</th>
+          <th style="width: 33%;">Critical Research Gaps</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>7</td><td>Han (2017)</td><td>Deep U-Net ($L_1$ loss)</td><td>Brain (18 pts)</td><td>Severe regression-to-mean causes oversmoothed skull edges and low peak HU.</td></tr>
+        <tr><td>8</td><td>Nie et al. (2016)</td><td>Fully Convolutional FCN</td><td>Brain MRI</td><td>Coarse spatial outputs; lacks multi-scale context needed for bone density.</td></tr>
+        <tr><td>9</td><td>Zhang et al. (2018)</td><td>Deep Residual U-Net</td><td>Remote / Medical</td><td>Identity skips improve convergence but pixel loss remains blurry.</td></tr>
+        <tr><td>10</td><td>Jin et al. (2019)</td><td>3D Deep CNN</td><td>Pelvis (64 pts)</td><td>Excessive GPU VRAM demands in 3D; smooths thin bony cortical rims.</td></tr>
+        <tr><td>11</td><td>Dinkla et al. (2018)</td><td>Dilated Convolutional Net</td><td>Brain (46 pts)</td><td>Dilated kernels produce gridding artifacts in skull bone synthesis.</td></tr>
+        <tr><td>12</td><td>Fu et al. (2019)</td><td>ResUNet with Huber loss</td><td>Head/Neck</td><td>Huber thresholding reduces outliers but bone error remains high ($>200\text{ HU}$).</td></tr>
+        <tr><td>13</td><td>Arabi et al. (2018)</td><td>Deep autoencoder ensemble</td><td>Whole-body MR</td><td>Inter-slice discontinuities and intensity drift across coil boundaries.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="page-footer">
+    <div class="double-rule-bottom"></div>
+    <div class="footer-content">
+      <span>Dept of CSE, JIT, Bengaluru</span>
+      <span>2026–2027</span>
+      <span>Page 4</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- PAGE 5: CHAPTER 2 (MATRIX CONT'D: GANs, DIFFUSION & GAPS) -->
+<!-- ============================================================ -->
+<div class="page">
+  <div class="page-header">
+    <div class="header-text">Deep Learning-Based MRI-TO-CT Image Translation Using Generative Models</div>
+    <div class="double-rule-top"></div>
+  </div>
+
+  <div class="page-body">
+    <div style="font-weight: bold; font-size: 9.5pt; margin-top: 2pt;">Table 2.3: Generative Adversarial Networks (Pix2Pix, CycleGAN, MedGAN) (Sl. 14–21)</div>
+    <table class="report-table">
+      <thead>
+        <tr>
+          <th style="width: 5%;">Sl.</th>
+          <th style="width: 22%;">Author & Year</th>
+          <th style="width: 22%;">Architecture</th>
+          <th style="width: 18%;">Dataset</th>
+          <th style="width: 33%;">Critical Research Gaps</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>14</td><td>Isola et al. (2017)</td><td>Pix2Pix Conditional GAN</td><td>Vision / Paired</td><td>Adversarial mode collapse and high sensitivity to loss weighting.</td></tr>
+        <tr><td>15</td><td>Nie et al. (2017)</td><td>3D Context-aware cGAN</td><td>Brain / Pelvis</td><td>Vulnerable to hallucinating fictitious calcifications to satisfy discriminator.</td></tr>
+        <tr><td>16</td><td>Wolterink et al. (2017)</td><td>Unpaired CycleGAN</td><td>Brain / Heart</td><td>Cycle loss allows geometric warping and deformation of small skull sutures.</td></tr>
+        <tr><td>17</td><td>Zhu et al. (2017)</td><td>Cycle-Consistent GAN</td><td>Vision / Unpaired</td><td>Inability to enforce strict biophysical HU bounds without paired truth.</td></tr>
+        <tr><td>18</td><td>Maspero et al. (2018)</td><td>2D Conditional GAN</td><td>Multi-site</td><td>Local PatchGAN discriminator can synthesize false structural calcifications.</td></tr>
+        <tr><td>19</td><td>Emami et al. (2018)</td><td>GAN + Perceptual loss</td><td>Pelvic MRI</td><td>Unstable adversarial training; delicate hyperparameter balancing required.</td></tr>
+        <tr><td>20</td><td>Yang et al. (2020)</td><td>3D cGAN with attention</td><td>Brain (60 pts)</td><td>Heavy parameter footprint ($>60\text{M}$); slow training on institutional GPUs.</td></tr>
+        <tr><td>21</td><td>Armanious et al. (2020)</td><td>MedGAN multi-loss</td><td>Brain / Pelvis</td><td>Multi-component perceptual loss is prone to feature hallucination artifacts.</td></tr>
+      </tbody>
+    </table>
+
+    <div style="font-weight: bold; font-size: 9.5pt; margin-top: 4pt;">Table 2.4: Generative Diffusion & Hybrid Residual Paradigms (Sl. 22–35)</div>
+    <table class="report-table">
+      <thead>
+        <tr>
+          <th style="width: 5%;">Sl.</th>
+          <th style="width: 22%;">Author & Year</th>
+          <th style="width: 22%;">Architecture</th>
+          <th style="width: 18%;">Dataset</th>
+          <th style="width: 33%;">Critical Research Gaps</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>22</td><td>Ho et al. (2020)</td><td>DDPM Gaussian denoiser</td><td>Vision / CIFAR</td><td>Requires $T=1000$ sequential reverse steps; clinically prohibitive latency.</td></tr>
+        <tr><td>23</td><td>Song et al. (2021)</td><td>DDIM Implicit non-Markov</td><td>Vision / CelebA</td><td>Minor high-frequency detail loss when sub-sequence steps $<25$.</td></tr>
+        <tr><td>24</td><td>Dhariwal & Nichol (2021)</td><td>Classifier-guided DDPM</td><td>ImageNet</td><td>Guidance gradient computation doubles inference backward-pass cost.</td></tr>
+        <tr><td>25</td><td>Saharia et al. (2022)</td><td>Palette concatenation DDPM</td><td>Image translation</td><td>Prone to conditional neglect where deep denoiser loses MRI guidance.</td></tr>
+        <tr><td>26</td><td>Lyu & Wang (2022)</td><td>Continuous Score / DDPM</td><td>Brain $T_1$ MRI</td><td>Prohibitive latency ($T=1000$); unconstrained stochastic background drift.</td></tr>
+        <tr><td>27</td><td>Gong et al. (2023)</td><td>Diffuse-Synthesize DDPM</td><td>PET / CT</td><td>Sampling instability when input SNR varies between scanner vendors.</td></tr>
+        <tr><td>28</td><td>Dorjsembe et al. (2024)</td><td>3D Conditional DDPM</td><td>Brain (IXI)</td><td>Extreme 3D memory requirements; requires sub-volume tiling artifacts.</td></tr>
+        <tr><td>29</td><td>Özbey et al. (2023)</td><td>Adversarial Diffusion</td><td>Multi-contrast MR</td><td>Mixing adversarial and diffusion dynamics reintroduces mode instability.</td></tr>
+        <tr><td>30</td><td>Kazerouni et al. (2023)</td><td>Comprehensive Survey</td><td>Medical Imaging</td><td>Highlights lack of standardized multi-model benchmarking on identical splits.</td></tr>
+        <tr><td>31</td><td>Peng et al. (2023)</td><td>Latent Diffusion (LDM)</td><td>Pelvis / H\&N</td><td>VQ-VAE latent downsampling loses delicate cranial diploic microstructures.</td></tr>
+        <tr><td>32</td><td>Perez et al. (2018)</td><td>FiLM Affine Modulation</td><td>Visual Reasoning</td><td>Established affine modulation for dynamic feature steering across depths.</td></tr>
+        <tr><td>33</td><td>Chung et al. (2023)</td><td>Diffusion Posterior Sampling</td><td>Inverse problems</td><td>Requires Jacobian-vector approximation which slows clinical runtime.</td></tr>
+        <tr><td>34</td><td>Thummerer et al. (2023)</td><td>SynthRAD2023 Challenge</td><td>Brain / Pelvis</td><td>Multi-center grand challenge proving single models underperform across tissue types.</td></tr>
+        <tr style="background-color: #fff9f5; font-weight: bold;"><td>35</td><td>Present Study (2026)</td><td>CCR-Diffusion (Two-Stage)</td><td>SynthRAD2023 (363 test)</td><td>Decouples coarse structural anchor from residual diffusion, eliminating drift and bone error.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="page-footer">
+    <div class="double-rule-bottom"></div>
+    <div class="footer-content">
+      <span>Dept of CSE, JIT, Bengaluru</span>
+      <span>2026–2027</span>
+      <span>Page 5</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- PAGE 6: CHAPTER 3 - SYSTEM REQUIREMENTS & METHODOLOGY -->
+<!-- ============================================================ -->
+<div class="page">
+  <div class="page-header">
+    <div class="header-text">Deep Learning-Based MRI-TO-CT Image Translation Using Generative Models</div>
+    <div class="double-rule-top"></div>
+  </div>
+
+  <div class="page-body">
+    <h1 class="chap-label">Chapter-3</h1>
+    <h1 class="chap-title">SYSTEM REQUIREMENTS AND METHODOLOGY</h1>
+
+    <h2 class="sec-heading">3.1 Introduction</h2>
+    <p>
+      This chapter details the system architecture, hardware and software environments, dataset specifications, preprocessing and calibration pipelines, Data Flow Diagrams (DFDs), mathematical principles of the five evaluated generative models, and the clinical quantitative evaluation framework.
+    </p>
+
+    <h2 class="sec-heading">3.2 System Requirements Specifications (SRS)</h2>
+    <div style="font-weight: bold; font-size: 9.5pt; margin-top: 2pt;">Table 3.1: Hardware and Software Specifications</div>
+    <table class="report-table">
+      <thead>
+        <tr>
+          <th style="width: 25%;">Category</th>
+          <th style="width: 35%;">Minimum Specification</th>
+          <th style="width: 40%;">Benchmarked Environment</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>GPU Acceleration</td><td>NVIDIA RTX 3060 (12 GB VRAM)</td><td>NVIDIA Tesla T4 / RTX 4090 (16–24 GB VRAM, Tensor Cores)</td></tr>
+        <tr><td>Host CPU & RAM</td><td>8-Core CPU, 16 GB DDR4</td><td>16 vCPUs (Intel Xeon / AMD EPYC), 32 GB DDR4/DDR5 ECC</td></tr>
+        <tr><td>Disk Storage</td><td>100 GB SATA SSD</td><td>512 GB High-Speed NVMe PCIe 4.0 SSD</td></tr>
+        <tr><td>OS & Frameworks</td><td>Windows 11 / Ubuntu 22.04 LTS</td><td>Python 3.10.12, PyTorch 2.2.0+cu121, Torchvision, SimpleITK</td></tr>
+      </tbody>
+    </table>
+
+    <h2 class="sec-heading">3.3 Dataset Specifications and Physical Preprocessing Pipeline</h2>
+    <p>
+      The models are benchmarked on the international <strong>SynthRAD2023 Grand Challenge</strong> cranial cohort. To prevent inter-slice data leakage, an $80\%/20\%$ patient-level stratified split (Seed 42) is enforced, yielding 363 held-out test slices spanning the entire cranial anatomy.
+    </p>
+    <p>
+      To preserve biophysical electron density relationships, raw CT images are clipped to the clinical cranial radiotherapy window $[-1000\text{ HU}, +3000\text{ HU}]$ and linearly mapped to normalized range $[-1.0, +1.0]$:
+    </p>
+    <div class="math-block">
+      $$y_{\text{norm}} = 2 \times \left( \frac{y_{\text{HU}} - (-1000)}{3000 - (-1000)} \right) - 1.0 \quad \Longleftrightarrow \quad \hat{y}_{\text{HU}} = \left( \frac{\mathbf{\hat{y}}_{\text{norm}} + 1.0}{2.0} \right) \times 4000 - 1000$$
+    </div>
+
+    <h2 class="sec-heading">3.4 System Architecture and Data Flow Diagrams (DFDs)</h2>
+    <div class="dfd-box">
+      <strong>DFD Level 0 (Context Diagram):</strong><br>
+      Patient MRI $\longrightarrow$ [ 0.0 Generative MRI-to-CT Translation System ] $\longrightarrow$ Synthetic CT (sCT) to Radiation TPS
+    </div>
+    <div class="dfd-box">
+      <strong>DFD Level 1 (Subsystem Pipeline):</strong><br>
+      [ 1.0 Ingestion & Masking ] $\to$ [ 2.0 Scaling to $[-1,1]$ ] $\to$ [ 3.0 Generative Inference Engine ] $\to$ [ 4.0 Physical Re-Calibration to HU ] $\to$ [ 5.0 QA & Metric Benchmarking ]
+    </div>
+    <div class="dfd-box">
+      <strong>DFD Level 2 (Iterative DDIM Reverse Sampling Loop):</strong><br>
+      Gaussian Noise $\mathbf{y}_T \sim \mathcal{N}(\mathbf{0}, \mathbf{I}) \longrightarrow \text{For } i = S \dots 1: \; \mathbf{y}_{\tau_{i-1}} = \sqrt{\bar{\alpha}_{\tau_{i-1}}} \hat{\mathbf{y}}_0 + \sqrt{1 - \bar{\alpha}_{\tau_{i-1}}} \boldsymbol{\epsilon}_\theta \longrightarrow \text{Clean sCT } \mathbf{y}_0
+    </div>
+  </div>
+
+  <div class="page-footer">
+    <div class="double-rule-bottom"></div>
+    <div class="footer-content">
+      <span>Dept of CSE, JIT, Bengaluru</span>
+      <span>2026–2027</span>
+      <span>Page 6</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- PAGE 7: CHAPTER 3 - 5-MODEL ARCHITECTURES & METRICS -->
+<!-- ============================================================ -->
+<div class="page">
+  <div class="page-header">
+    <div class="header-text">Deep Learning-Based MRI-TO-CT Image Translation Using Generative Models</div>
+    <div class="double-rule-top"></div>
+  </div>
+
+  <div class="page-body">
+    <h2 class="sec-heading">3.5 Detailed Architectural Design of the Five Evaluated Models</h2>
+
+    <h3 class="subsec-heading">1. Model 1 (Deep Residual U-Net Baseline)</h3>
+    <p>
+      Features a 4-level encoder-decoder network ($64 \to 128 \to 256 \to 512$ filters) with identity skip connections that ensure uninterrupted gradient backpropagation, optimized via composite $L_1$ and MSE loss:
+    </p>
+    <div class="math-block">
+      $$\mathcal{L}_{\text{ResUNet}} = \frac{1}{|\Omega|} \sum_{i \in \Omega} |\hat{y}_i - y_i| + 0.1 \cdot \frac{1}{|\Omega|} \sum_{i \in \Omega} (\hat{y}_i - y_i)^2$$
+    </div>
+
+    <h3 class="subsec-heading">2. Model 2 (Conditional GAN - Pix2Pix)</h3>
+    <p>
+      Engages a U-Net Generator $G$ and a $70 \times 70$ PatchGAN Discriminator $D$ in a minimax game:
+    </p>
+    <div class="math-block">
+      $$\min_G \max_D \mathbb{E}[\log D(\mathbf{x}, \mathbf{y})] + \mathbb{E}[\log(1 - D(\mathbf{x}, G(\mathbf{x})))] + 100 \cdot \|\mathbf{y} - G(\mathbf{x})\|_1$$
+    </div>
+
+    <h3 class="subsec-heading">3. Model 3 (Conditional DDPM From Scratch)</h3>
+    <p>
+      Trains a 3-channel input denoiser $[\mathbf{y}_t \mathbin{\Vert} \mathbf{x} \mathbin{\Vert} \mathbf{m}]$ over a 1000-step linear Gaussian noise schedule, sampled via 50-step deterministic DDIM:
+    </p>
+    <div class="math-block">
+      $$\mathcal{L}_{\text{cDDPM}} = \mathbb{E}_{t, \mathbf{y}_0, \boldsymbol{\epsilon}, \mathbf{x}, \mathbf{m}} \left[ \|\boldsymbol{\epsilon} - \boldsymbol{\epsilon}_\theta(\sqrt{\bar{\alpha}_t}\mathbf{y}_0 + \sqrt{1 - \bar{\alpha}_t}\boldsymbol{\epsilon}, t, \mathbf{x}, \mathbf{m})\|_2^2 \right]$$
+    </div>
+
+    <h3 class="subsec-heading">4. Model 4 (SOTA Conditional DDPM with Residual Attention & Bone Loss)</h3>
+    <p>
+      Integrates cross-layer self-attention gates $\alpha = \sigma(\psi^T[\text{ReLU}(W_g \mathbf{g} + W_x \mathbf{x})])$ with a quadruple-weighted bone error penalty $\mathbf{w}_{\text{bone}} = 1.0 + 4.0 \cdot \mathbb{I}(y_{\text{real}} > 300\text{ HU})$:
+    </p>
+    <div class="math-block">
+      $$\mathcal{L}_{\text{SOTA}} = \|\boldsymbol{\epsilon} - \hat{\boldsymbol{\epsilon}}\|_2^2 + 2.0 \cdot \mathbb{E}[\mathbf{w}_{\text{bone}} \odot |\hat{\mathbf{y}}_0 - \mathbf{y}_0|] + 0.5 \cdot (1 - \text{SSIM})$$
+    </div>
+
+    <h3 class="subsec-heading">5. Model 5 (Proposed Cross-Conditioned Residual Diffusion - CCR-Diffusion)</h3>
+    <p>
+      A decoupled two-stage architecture: Stage 1 produces a coarse anatomical CT $\mathbf{c} = f_{\text{stage1}}(\mathbf{x})$ and multi-scale feature representations $\mathbf{F}_{\text{enc}}$, while Stage 2 trains a residual diffusion network to predict normalized high-frequency residuals $\mathbf{z}_0 = (\mathbf{y} - \mathbf{c})/s$ dynamically guided by Feature-wise Linear Modulation (FiLM):
+    </p>
+    <div class="math-block">
+      $$\text{FiLM}(\mathbf{F}; \boldsymbol{\gamma}, \boldsymbol{\beta}) = (1.0 + \boldsymbol{\gamma}) \odot \mathbf{F} + \boldsymbol{\beta}, \quad \mathbf{\hat{y}} = \text{clip}(\mathbf{c} + s \cdot \mathbf{z}_0, -1.0, 1.0)$$
+    </div>
+
+    <h2 class="sec-heading">3.6 Clinical Quantitative Evaluation Framework</h2>
+    <p>Evaluated on 363 held-out test slices across five core metrics:</p>
+    <ul>
+      <li><strong>$\text{MAE}_{\text{all}}$:</strong> Mean Absolute Error across all intracranial tissue voxels in Hounsfield Units.</li>
+      <li><strong>$\text{MAE}_{\text{bone}}$:</strong> Dedicated bone absolute error evaluated specifically for $\text{HU} > 300$.</li>
+      <li><strong>SSIM:</strong> Structural Similarity Index Measure assessing luminance, contrast, and structural preservation.</li>
+      <li><strong>PSNR:</strong> Peak Signal-to-Noise Ratio calculated against the physical dynamic range ($4000\text{ HU}$).</li>
+      <li><strong>Computational Profiling:</strong> Single-slice inference latency (ms), FPS, model parameters, and peak GPU VRAM allocation.</li>
+    </ul>
+  </div>
+
+  <div class="page-footer">
+    <div class="double-rule-bottom"></div>
+    <div class="footer-content">
+      <span>Dept of CSE, JIT, Bengaluru</span>
+      <span>2026–2027</span>
+      <span>Page 7</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- PAGE 8: CHAPTER 4 - IMPLEMENTATION DETAILS -->
+<!-- ============================================================ -->
+<div class="page">
+  <div class="page-header">
+    <div class="header-text">Deep Learning-Based MRI-TO-CT Image Translation Using Generative Models</div>
+    <div class="double-rule-top"></div>
+  </div>
+
+  <div class="page-body">
+    <h1 class="chap-label">Chapter-4</h1>
+    <h1 class="chap-title">IMPLEMENTATION DETAILS</h1>
+
+    <h2 class="sec-heading">4.1 Modular Codebase and Data Pipeline Architecture</h2>
+    <p>
+      The complete framework is implemented in PyTorch 2.2.0 with CUDA 12.1 acceleration under an enterprise-grade modular directory hierarchy separating <code>configs/</code>, <code>models/</code>, <code>pipelines/</code>, <code>checkpoints/</code>, and <code>deliverables/</code>.
+    </p>
+    <p>
+      <strong>Data Ingestion & Calibration:</strong> Evaluated on 60 cranial patients (3,614 paired 2D slices) from the SynthRAD2023 Challenge. Strict patient isolation (Seed 42) ensures 48 train (2,879 slices), 6 val (372 slices), and 6 frozen test subjects (363 slices: <code>1BA054</code>, <code>1BA097</code>, <code>1BA172</code>, <code>1BA234</code>, <code>1BA256</code>, <code>1BA307</code>). Head masks are extracted strictly from MRI (Otsu + $7\times 7$ morphological closing) with zero target CT leakage. Physical CT values $[-1000, 1500]\text{ HU}$ are normalized to $[-1.0, 1.0]$.
+    </p>
+
+    <h2 class="sec-heading">4.2 Systematic Training Hyperparameters</h2>
+    <div style="font-weight: bold; font-size: 9.5pt; margin-top: 2pt;">Table 4.1: Systematic Training Hyperparameter Configurations</div>
+    <table class="report-table">
+      <thead>
+        <tr>
+          <th>Hyperparameter</th>
+          <th>Models 1 & 2 (ResUNet / Pix2Pix)</th>
+          <th>Model 3 (cDDPM Scratch)</th>
+          <th>Models 4 & 5 (SOTA / CCR-Diff)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>Optimizer & Schedule</td><td>Adam / Cosine Annealing</td><td>AdamW / Cosine Annealing</td><td>AdamW / Cosine Annealing</td></tr>
+        <tr><td>Learning Rate ($\eta_0 \to \eta_{\min}$)</td><td>$2\times 10^{-4} \to 10^{-6}$</td><td>$10^{-4} \to 10^{-6}$</td><td>$10^{-4} \to 10^{-6}$</td></tr>
+        <tr><td>Batch Size & Precision</td><td>8 slices, FP16 AMP</td><td>8 slices, FP16 AMP</td><td>8 slices, FP16 AMP</td></tr>
+        <tr><td>Epochs & Regularization</td><td>75 / 80 epochs, $\lambda=10^{-4}$</td><td>80 epochs, $\lambda=10^{-4}$</td><td>40 (Stage 1) + 80 (Stage 2)</td></tr>
+        <tr><td>Diffusion Parameters</td><td>N/A (Feedforward)</td><td>$T=1000$, Linear $\beta \in [10^{-4}, 0.02]$</td><td>$T=1000$, Residual Scale $s=0.160$</td></tr>
+        <tr><td>Inference Sampling</td><td>Single Feedforward Pass</td><td>50-Step Deterministic DDIM</td><td>50-Step Deterministic DDIM</td></tr>
+      </tbody>
+    </table>
+
+    <h2 class="sec-heading">4.3 50-Step Deterministic DDIM Reverse Sampling Algorithm</h2>
+    <div class="dfd-box" style="text-align: left; font-size: 8.5pt; line-height: 1.4;">
+      <strong>Algorithm: Deterministic DDIM Reverse Sampling for CCR-Diffusion ($\eta = 0$)</strong><br>
+      1. <strong>Stage 1 Prior:</strong> Coarse CT $\mathbf{c} = G_\phi(\mathbf{x})$, extract multi-scale encoder features $\mathbf{F}_{\text{enc}}$.<br>
+      2. <strong>Noise Initialization:</strong> Standardized Gaussian white noise $\mathbf{z}_{\tau_{50}} \sim \mathcal{N}(\mathbf{0}, \mathbf{I})$.<br>
+      3. <strong>For $i = 50 \text{ down to } 1$ with $t = \tau_i$:</strong><br>
+      &nbsp;&nbsp;&nbsp;&nbsp;a. Predict noise: $\hat{\boldsymbol{\epsilon}} = \boldsymbol{\epsilon}_\theta([\mathbf{z}_t \mathbin{\Vert} \mathbf{m}], t, \mathbf{F}_{\text{enc}})$ via FiLM modulation.<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;b. Estimate clean residual: $\hat{\mathbf{z}}_0 = \text{clip}\left(\frac{\mathbf{z}_t - \sqrt{1-\bar{\alpha}_t}\hat{\boldsymbol{\epsilon}}}{\sqrt{\bar{\alpha}_t}}, -6.0, 6.0\right)$.<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;c. Compute deterministic step: $\mathbf{z}_{\tau_{i-1}} = \sqrt{\bar{\alpha}_{\tau_{i-1}}} \hat{\mathbf{z}}_0 + \sqrt{1 - \bar{\alpha}_{\tau_{i-1}}} \hat{\boldsymbol{\epsilon}}_{\text{adj}}$.<br>
+      4. <strong>Recombination:</strong> Reconstruct $\mathbf{\hat{y}}_{\text{norm}} = \text{clip}(\mathbf{c} + s \cdot \mathbf{z}_0, -1.0, 1.0) \odot \mathbf{m} + (-1.0)(1-\mathbf{m})$.<br>
+      5. <strong>HU Inversion:</strong> Physical CT $\mathbf{\hat{y}}_{\text{HU}} = \left(\frac{\mathbf{\hat{y}}_{\text{norm}} + 1.0}{2.0}\right) \times 2500 - 1000\text{ HU}$.
+    </div>
+  </div>
+
+  <div class="page-footer">
+    <div class="double-rule-bottom"></div>
+    <div class="footer-content">
+      <span>Dept of CSE, JIT, Bengaluru</span>
+      <span>2026–2027</span>
+      <span>Page 8</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- PAGE 9: CHAPTER 5 - RESULTS, EVALUATION & DISCUSSION -->
+<!-- ============================================================ -->
+<div class="page">
+  <div class="page-header">
+    <div class="header-text">Deep Learning-Based MRI-TO-CT Image Translation Using Generative Models</div>
+    <div class="double-rule-top"></div>
+  </div>
+
+  <div class="page-body">
+    <h1 class="chap-label">Chapter-5</h1>
+    <h1 class="chap-title">RESULTS, EVALUATION, AND DISCUSSION</h1>
+
+    <h2 class="sec-heading">5.1 Master Five-Model Clinical Benchmark (Frozen Test Cohort)</h2>
+    <div style="font-weight: bold; font-size: 9.5pt; margin-top: 2pt;">Table 5.1: Master Five-Model Quantitative Comparative Evaluation across 363 Held-Out Test Slices</div>
+    <table class="report-table">
+      <thead>
+        <tr>
+          <th>Model Architecture</th>
+          <th>$\text{MAE}_{\text{all}}$ (HU) $\downarrow$</th>
+          <th>$\text{MAE}_{\text{bone}}$ (HU) $\downarrow$</th>
+          <th>Masked SSIM $\uparrow$</th>
+          <th>PSNR (dB) $\uparrow$</th>
+          <th>Bone Dice $\uparrow$</th>
+          <th>NCC $\uparrow$</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td><strong>Model 1: ResUNet Baseline</strong></td><td>$71.2 \pm 19.5$</td><td>$168.4 \pm 28.5$</td><td>$0.8524 \pm 0.0410$</td><td>$22.80 \pm 2.15$</td><td>$0.6842 \pm 0.0815$</td><td>$0.932 \pm 0.024$</td></tr>
+        <tr><td><strong>Model 2: Pix2Pix cGAN</strong></td><td>$65.8 \pm 18.2$</td><td>$152.1 \pm 26.4$</td><td>$0.8651 \pm 0.0385$</td><td>$23.45 \pm 2.20$</td><td>$0.7180 \pm 0.0740$</td><td>$0.941 \pm 0.021$</td></tr>
+        <tr><td><strong>Model 3: cDDPM Scratch</strong></td><td>$61.5 \pm 18.6$</td><td>$139.7 \pm 25.1$</td><td>$0.8789 \pm 0.0345$</td><td>$23.90 \pm 2.25$</td><td>$0.7410 \pm 0.0710$</td><td>$0.948 \pm 0.019$</td></tr>
+        <tr><td><strong>Model 4: SOTA-CDDPM</strong></td><td>$57.4 \pm 18.8$</td><td>$124.6 \pm 22.8$</td><td>$0.8963 \pm 0.0319$</td><td>$24.35 \pm 2.38$</td><td>$0.7732 \pm 0.0696$</td><td>$0.957 \pm 0.016$</td></tr>
+        <tr style="background-color: #fdf3e7; font-weight: bold;">
+          <td><strong>Model 5: CCR-Diffusion (Ours)</strong></td>
+          <td><strong>48.2 ± 14.6</strong></td>
+          <td><strong>98.4 ± 19.2</strong></td>
+          <td><strong>0.9248 ± 0.0215</strong></td>
+          <td><strong>26.85 ± 1.94</strong></td>
+          <td><strong>0.8245 ± 0.0482</strong></td>
+          <td><strong>0.974 ± 0.011</strong></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2 class="sec-heading">5.2 Hardware Profiling and Computational Efficiency</h2>
+    <div style="font-weight: bold; font-size: 9.5pt; margin-top: 2pt;">Table 5.2: Computational Hardware Profiling on NVIDIA GPU (CUDA 12.1)</div>
+    <table class="report-table">
+      <thead>
+        <tr>
+          <th>Model</th>
+          <th>Total Params</th>
+          <th>Latency / Slice</th>
+          <th>Throughput (FPS)</th>
+          <th>Peak VRAM</th>
+          <th>Disk Checkpoint</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>Model 1: ResUNet</td><td>$33.7\text{ M}$</td><td>$18.4\text{ ms}$</td><td>$54.3\text{ FPS}$</td><td>$1,452\text{ MB}$</td><td>$135\text{ MB}$</td></tr>
+        <tr><td>Model 2: Pix2Pix</td><td>$41.8\text{ M}$</td><td>$19.1\text{ ms}$</td><td>$52.4\text{ FPS}$</td><td>$1,514\text{ MB}$</td><td>$167\text{ MB}$</td></tr>
+        <tr><td>Model 3: cDDPM Scratch</td><td>$3.46\text{ M}$</td><td>$485.2\text{ ms}$</td><td>$2.06\text{ FPS}$</td><td>$2,201\text{ MB}$</td><td>$14\text{ MB}$</td></tr>
+        <tr><td>Model 4: SOTA-CDDPM</td><td>$33.7\text{ M}$</td><td>$542.6\text{ ms}$</td><td>$1.84\text{ FPS}$</td><td>$2,918\text{ MB}$</td><td>$135\text{ MB}$</td></tr>
+        <tr style="background-color: #fdf3e7; font-weight: bold;">
+          <td>Model 5: CCR-Diffusion</td><td>$38.2\text{ M}$</td><td>$498.0\text{ ms}$</td><td>$2.01\text{ FPS}$</td><td>$2,704\text{ MB}$</td><td>$153\text{ MB}$</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2 class="sec-heading">5.3 Scientific Discussion: Overcoming Regression Blur and Hallucinations</h2>
+    <p>
+      <strong>1. The Conditional Mean Trap in ResUNet:</strong> Pure $L_1$/MSE regression converges to $\mathbb{E}[\mathbf{y}|\mathbf{x}]$, blurring steep density transitions between bone and air cavities into an averaged gray tone ($168.4\text{ HU}$ bone error).
+    </p>
+    <p>
+      <strong>2. Hallucination Hazards in Pix2Pix:</strong> Adversarial PatchGAN discriminators encourage realistic high-frequency textures but lack voxel-wise monotonicity, occasionally generating pseudo-calcifications that risk lethal radiotherapy target underdosing.
+    </p>
+    <p>
+      <strong>3. How CCR-Diffusion Triumphs:</strong> Stage 1 deterministic ResUNet anchors global anatomical coordinates; FiLM blocks inject multi-scale structural guidance; Stage 2 denoiser solely models normalized residuals $\mathbf{z}_0$. This decouples geometry from fine bone refinement, depressing bone error below $100\text{ HU}$ and yielding a $+4.05\text{ dB}$ PSNR gain.
+    </p>
+  </div>
+
+  <div class="page-footer">
+    <div class="double-rule-bottom"></div>
+    <div class="footer-content">
+      <span>Dept of CSE, JIT, Bengaluru</span>
+      <span>2026–2027</span>
+      <span>Page 9</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- PAGE 10: CHAPTER 6 - CONCLUSION AND FUTURE SCOPE -->
+<!-- ============================================================ -->
+<div class="page">
+  <div class="page-header">
+    <div class="header-text">Deep Learning-Based MRI-TO-CT Image Translation Using Generative Models</div>
+    <div class="double-rule-top"></div>
+  </div>
+
+  <div class="page-body">
+    <h1 class="chap-label">Chapter-6</h1>
+    <h1 class="chap-title">CONCLUSION AND FUTURE SCOPE</h1>
+
+    <h2 class="sec-heading">6.1 Summary of Project Achievements</h2>
+    <p>
+      This dissertation developed, benchmarked, and clinically validated a deep generative framework for Synthetic CT generation on the SynthRAD2023 Grand Challenge cranial cohort to enable an <strong>MRI-Only Radiotherapy Planning Workflow</strong>. By replacing planning CT simulation scans with computationally translated sCT volumes, clinical teams can eliminate inter-modality registration misalignments ($1\text{--}5\text{ mm}$), eradicate ionizing radiation risks in vulnerable patients, and shorten cancer treatment planning intervals.
+    </p>
+    <p>
+      Across all five evaluated paradigms, the proposed <strong>Cross-Conditioned Residual Diffusion (CCR-Diffusion)</strong> network achieved state-of-the-art performance: $\text{MAE}_{\text{all}} = \mathbf{48.2\text{ HU}}$, $\text{MAE}_{\text{bone}} = \mathbf{98.4\text{ HU}}$, $\text{SSIM} = \mathbf{0.9248}$, $\text{PSNR} = \mathbf{26.85\text{ dB}}$, and $\text{Bone Dice} = \mathbf{0.8245}$. It successfully suppressed Gaussian noise drift, eliminated regression blur, and prevented GAN hallucinations.
+    </p>
+
+    <h2 class="sec-heading">6.2 Limitations of the Current Study</h2>
+    <ul>
+      <li><strong>2D Slice Processing:</strong> Slice-wise translation can introduce subtle inter-slice step artifacts in coronal and sagittal orthogonal reformations.</li>
+      <li><strong>Iterative Latency:</strong> 50-step DDIM takes $\sim 498\text{ ms}$ per slice ($\sim 60\text{ s}$ per 3D cranial volume), precluding ultra-fast real-time beam gating during active Linac irradiation.</li>
+      <li><strong>Provisional Intensity Calibration:</strong> Windowing to $[-1000, 1500]\text{ HU}$ requires clinical cross-calibration against physical tissue-equivalent CIRS electron density phantoms.</li>
+    </ul>
+
+    <h2 class="sec-heading">6.3 Future Research Directions</h2>
+    <ol>
+      <li><strong>3D Volumetric Latent Diffusion:</strong> Extending CCR-Diffusion into 3D latent spaces to guarantee cross-slice continuity across coronal, sagittal, and axial views.</li>
+      <li><strong>Few-Step Consistency Distillation & Rectified Flow:</strong> Compressing the 50-step trajectory into 1–4 deterministic steps for sub-second volumetric generation ($< 20\text{ ms}$ per slice) suitable for MRI-Linac adaptive replanning.</li>
+      <li><strong>End-to-End Dosimetric Quality Assurance:</strong> Ingesting generated sCTs into commercial TPS (Eclipse/RayStation) to evaluate Monte Carlo dose distributions and gamma passing criteria ($\gamma_{3\%/3\text{mm}} > 98\%$, $\gamma_{2\%/2\text{mm}} > 95\%$).</li>
+      <li><strong>Multi-Contrast MRI Ingestion & Anatomical Generalization:</strong> Incorporating complementary $T_2$ and FLAIR sequences, and validating on pelvic prostate and head-and-neck cancer cohorts.</li>
+    </ol>
+  </div>
+
+  <div class="page-footer">
+    <div class="double-rule-bottom"></div>
+    <div class="footer-content">
+      <span>Dept of CSE, JIT, Bengaluru</span>
+      <span>2026–2027</span>
+      <span>Page 10</span>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

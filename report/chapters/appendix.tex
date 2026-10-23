@@ -1,0 +1,98 @@
+\chapter{Computational Environment and Software Dependencies}
+\label{app:environment}
+
+All experimental training routines, comparative benchmarking, and statistical validations were executed within a reproducible high-performance deep learning computing environment. Table~\ref{tab:hardware_specs} and Table~\ref{tab:software_specs} detail the hardware and software specifications.
+
+\begin{table}[!htbp]
+\centering
+\caption{Hardware Infrastructure and Compute Accelerator Specifications}
+\label{tab:hardware_specs}
+\small
+\renewcommand{\arraystretch}{1.25}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{} l p{10cm} @{}}
+\toprule
+\textbf{Hardware Component} & \textbf{Technical Specification} \\
+\midrule
+Compute Accelerator & NVIDIA GeForce RTX / Tesla GPU ($16\text{ GB}$ / $24\text{ GB}$ GDDR6 VRAM) \\
+CUDA Compute Capability & Version 8.9 (Ada Lovelace Architecture) / Version 8.0 (Ampere) \\
+Host Processor (CPU) & Intel Core / AMD Ryzen ($8+$ Cores, 16 Threads @ $3.8\text{ GHz}$) \\
+System Memory (RAM) & $32\text{ GB}$ DDR4 / DDR5 High-Speed System Memory \\
+Primary Storage & $1\text{ TB}$ NVMe PCIe Gen4 Solid-State Drive (Sequential Read: $5000\text{ MB/s}$) \\
+Host Operating System & 64-bit Linux (Ubuntu 22.04 LTS) / Windows 11 Enterprise \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\begin{table}[!htbp]
+\centering
+\caption{Core Software Packages, Drivers, and Library Dependencies}
+\label{tab:software_specs}
+\small
+\renewcommand{\arraystretch}{1.25}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{} l c p{8.5cm} @{}}
+\toprule
+\textbf{Package / Tool} & \textbf{Version} & \textbf{Primary Role in Project Pipeline} \\
+\midrule
+\texttt{Python} & 3.10.12 & Core programming language and runtime environment \\
+\texttt{PyTorch} & 2.2.0 & Deep learning modeling, automatic differentiation, and GPU tensor execution \\
+\texttt{TorchVision} & 0.17.0 & Medical image tensor transforms and convolutional utilities \\
+\texttt{CUDA Toolkit} & 12.1 & GPU parallel computing platform and kernel acceleration \\
+\texttt{cuDNN} & 8.9.2 & Highly tuned primitives for deep residual and diffusion convolutions \\
+\texttt{SimpleITK} & 2.3.1 & Medical image I/O, DICOM metadata parsing, and spatial resampling \\
+\texttt{NiBabel} & 5.2.0 & NIfTI volumetric data extraction and spatial affine matrix parsing \\
+\texttt{MONAI} & 1.3.0 & Medical open network for AI transforms, spatial augmentations, and loss functions \\
+\texttt{Scikit-Image} & 0.22.0 & Multi-scale SSIM computation, morphological bone mask operations \\
+\texttt{NumPy} & 1.26.4 & High-performance array operations and radiometric coordinate math \\
+\texttt{Matplotlib} & 3.8.3 & Publication-grade loss curves and voxel-wise error map rendering \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\chapter{Core Radiometric Calibration and Reverse Sampling Protocols}
+\label{app:calibration}
+
+\section{Forward Intensity Normalization (Ingestion Protocol)}
+Prior to input into the neural networks, all raw CT Hounsfield Units ($y_{\text{HU}}$) are dynamically windowed between $[-1000.0, +1500.0]\text{ HU}$ and mapped into normalized tensor space $y_{\text{norm}} \in [-1.0, +1.0]$:
+\begin{equation}
+y_{\text{norm}} = 2 \times \left( \frac{y_{\text{HU}} - (-1000.0)}{1500.0 - (-1000.0)} \right) - 1.0 = 2 \times \left( \frac{y_{\text{HU}} + 1000.0}{2500.0} \right) - 1.0
+\label{eq:app_ct_norm}
+\end{equation}
+
+\section{Physical Radiometric Calibration (TPS Export Protocol)}
+Predicted normalized synthetic CT tensors ($\mathbf{\hat{y}}_{\text{norm}}$) are reverted to physical attenuation Hounsfield Units ($\mathbf{\hat{y}}_{\text{HU}}$) for treatment planning system (TPS) ingestion:
+\begin{equation}
+\mathbf{\hat{y}}_{\text{HU}} = \left( \frac{\mathbf{\hat{y}}_{\text{norm}} + 1.0}{2.0} \right) \times 2500.0 - 1000.0
+\label{eq:app_ct_inv}
+\end{equation}
+Background voxels outside the binary cranial mask ($\mathbf{m} = 0$) are strictly clamped to $-1000.0\text{ HU}$ (air attenuation).
+
+\section{Accelerated DDIM 50-Step Deterministic Reverse Sampling Formulation}
+For the diffusion models (cDDPM, SOTA-CDDPM, and CCR-Diffusion), deterministic inference without stochastic variance ($\sigma_t = 0$) is executed using a 50-step uniform sub-sequence $\tau = [\tau_1, \tau_2, \dots, \tau_{50}] \subset [1, 1000]$:
+\begin{equation}
+\mathbf{y}_{\tau_{i-1}} = \sqrt{\bar{\alpha}_{\tau_{i-1}}} \left( \frac{\mathbf{y}_{\tau_i} - \sqrt{1 - \bar{\alpha}_{\tau_i}} \, \boldsymbol{\epsilon}_\theta(\mathbf{y}_{\tau_i}, \tau_i, \mathbf{x}, \mathbf{m})}{\sqrt{\bar{\alpha}_{\tau_i}}} \right) + \sqrt{1 - \bar{\alpha}_{\tau_{i-1}}} \, \boldsymbol{\epsilon}_\theta(\mathbf{y}_{\tau_i}, \tau_i, \mathbf{x}, \mathbf{m})
+\label{eq:app_ddim_step}
+\end{equation}
+
+\chapter{Project Deliverables and Research Contributions}
+\label{app:deliverables}
+
+\section{Research Manuscript Details}
+\begin{itemize}
+    \item \textbf{Title:} \textit{Cross-Conditioned Residual Diffusion Networks for High-Fidelity Synthetic CT Generation from Brain MRI in Radiotherapy Simulation}
+    \item \textbf{Authors:} Department of Computer Science \& Engineering, Jyothy Institute of Technology, Bengaluru.
+    \item \textbf{Academic Affiliation:} Visvesvaraya Technological University (VTU), Belagavi, Karnataka, India.
+    \item \textbf{Academic Year:} 2026--2027.
+\end{itemize}
+
+\section{Project Source Code and Checkpoint Repositories}
+The complete implementation---including preprocessing pipelines, trained PyTorch model checkpoints, evaluation benchmarking scripts, and comparative visualization suites---is structured as follows:
+\begin{itemize}
+    \item \texttt{models/}: Complete model architectures for ResUNet, Pix2Pix, cDDPM, SOTA-CDDPM, and the proposed CCR-Diffusion network.
+    \item \texttt{checkpoints/}: Optimized state dictionaries for the top-performing checkpoints across all 5 architectures.
+    \item \texttt{evaluation/}: Automated evaluation pipeline computing patient-wise Masked SSIM, Global SSIM, PSNR, normalized MAE, physical HU-MAE, RMSE, and Cortical Bone Dice coefficient.
+    \item \texttt{scripts/}: Accelerated DDIM reverse sampling inferencer and DICOM export utilities compatible with clinical TPS software.
+\end{itemize}
